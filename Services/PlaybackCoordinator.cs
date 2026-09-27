@@ -12,9 +12,9 @@ using WinUIMusicPlayer.ViewModel;
 namespace WinUIMusicPlayer.Services;
 
 /// <summary>所有选曲与失败恢复入口；立即发布待播选择，开始播放时再提交曲目展示与统计。</summary>
-public sealed class PlaybackCoordinator(AppViewModel state, BassPlayerCommandService player,
+public sealed partial class PlaybackCoordinator(AppViewModel state, BassPlayerCommandService player,
     PlaybackStatsService statistics, ApplicationTasks tasks, ShutdownCoordinator shutdown,
-    ILogger<PlaybackCoordinator> logger, RemotePlaybackService remote, WebDavLibraryService library) : IDisposable
+    ILogger<PlaybackCoordinator> logger, RemotePlaybackService remote, WebDavLibraryService library, IpcService ipc) : IDisposable
 {
     private CancellationTokenSource? _presentation;
     private bool _disposed;
@@ -66,6 +66,7 @@ public sealed class PlaybackCoordinator(AppViewModel state, BassPlayerCommandSer
     private Task RunSelectionAsync(Func<CancellationToken, Task> operation, Music music, long entryId)
     {
         if (_disposed || !state.CanStartPlayback) return Task.CompletedTask;
+        CancelGaplessPlan();
         long version = ++_selectionVersion;
         _presentation?.Cancel(); // 收到新意图即停止上一轮等待，不等 ApplicationTasks 的下一次调度。
         SetPending(new(music, entryId));
@@ -103,6 +104,7 @@ public sealed class PlaybackCoordinator(AppViewModel state, BassPlayerCommandSer
 
     public void CancelPendingSelection()
     {
+        CancelGaplessPlan();
         _playingVersion = ++_selectionVersion;
         _deferredFailure = null;
         _presentation?.Cancel();
@@ -207,6 +209,7 @@ public sealed class PlaybackCoordinator(AppViewModel state, BassPlayerCommandSer
             state.LoadLyricsToUI(music);
             state.UpdateProgressTimerUI();
             TrackStarted?.Invoke(music, token);
+            StartGapless();
         });
         // 远程准备包含 PasswordVault 和缓存文件前置工作；只有展示发布回 UI 线程。
         if (music.IsRemote && !token.IsCancellationRequested)
@@ -216,6 +219,7 @@ public sealed class PlaybackCoordinator(AppViewModel state, BassPlayerCommandSer
     public void Dispose()
     {
         if (_disposed) return;
+        StopGapless();
         _disposed = true;
         _presentation?.Cancel();
         _presentation?.Dispose();

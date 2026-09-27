@@ -45,6 +45,13 @@ internal sealed class Equalizer
         _history.AsSpan().Clear();
     }
 
+    /// <summary>Audio-thread handoff after the last old-track sample; the old source is no longer rendered.</summary>
+    internal void ContinueFrom(Equalizer previous)
+    {
+        previous._history.AsSpan().CopyTo(_history);
+        _renderSnapshot = previous._renderSnapshot;
+    }
+
     private static Band[] CreateEmptySnapshot()
     {
         var bands = new Band[10];

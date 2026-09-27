@@ -12,7 +12,8 @@ using static WinUIMusicPlayer.Utils.ToolUtils;
 namespace WinUIMusicPlayer.Services;
 
 /// <summary>播放封面/调色板展示管线。后台工作受任务屏障管理，不持有页面或 AppViewModel。</summary>
-public sealed class CoverPresentationService(AppState state, ApplicationTasks tasks, SystemMediaControlsService media, ILogger<CoverPresentationService> logger) : IDisposable
+public sealed class CoverPresentationService(AppState state, ApplicationTasks tasks, SystemMediaControlsService media,
+    WebDavLibraryService webDav, ILogger<CoverPresentationService> logger) : IDisposable
 {
     private int _coverUpdateVersion, _defaultPaletteVersion;
     private bool _disposed, _started, _usesDefaultPalette;
@@ -73,6 +74,14 @@ public sealed class CoverPresentationService(AppState state, ApplicationTasks ta
             byte[]? picData = await Task.Run(async () =>
             {
                 token.ThrowIfCancellationRequested();
+                // 热缓存直接用于取色/大图展示，不再每次切歌都读取完整原图数组。
+                if (music.ImageHash is { Length: > 0 })
+                {
+                    string cachedRaw = FindRawCachePath(music.ImageHash);
+                    if (File.Exists(cachedRaw) && new FileInfo(cachedRaw).Length > 0 &&
+                        (music.IsRemote || File.GetLastWriteTimeUtc(cachedRaw) > File.GetLastWriteTimeUtc(music.Path)))
+                        return null;
+                }
                 return await GetRawImage(music, false, token);
             }, token);
             if (token.IsCancellationRequested) return;
@@ -84,11 +93,13 @@ public sealed class CoverPresentationService(AppState state, ApplicationTasks ta
                 palette = await AnimatedWin2dControls.Impressionist.PaletteExtractor
                     .ExtractFromBmpCacheAsync(thumbPath, state.Preferences.PaletteAlgorithm, ct: token);
             }
-            if (palette is null && picData is { Length: > 0 })
+            if (palette is null)
             {
-                palette = await Task.Run(() =>
-                    AnimatedWin2dControls.Impressionist.PaletteExtractor
-                        .ExtractFromImageBytesAsync(picData, state.Preferences.PaletteAlgorithm, ct: token), token);
+                picData ??= await Task.Run(() => GetRawImage(music, false, token), token);
+                if (picData is { Length: > 0 })
+                    palette = await Task.Run(() =>
+                        AnimatedWin2dControls.Impressionist.PaletteExtractor
+                            .ExtractFromImageBytesAsync(picData, state.Preferences.PaletteAlgorithm, ct: token), token);
             }
 
             // 封面像素：仅供 RotatingMesh 背景着色器旋转层使用，其它着色器只取色、
@@ -106,26 +117,39 @@ public sealed class CoverPresentationService(AppState state, ApplicationTasks ta
                         .LoadSquareRgba8FromBmpCacheAsync(artworkThumbPath, ct: token);
                 }
 
-                if (artwork is null && picData is { Length: > 0 })
+                if (artwork is null)
                 {
-                    artwork = await AnimatedWin2dControls.Impressionist.ArtworkPixelDecoder
-                        .LoadSquareRgba8FromImageBytesAsync(picData, ct: token);
+                    picData ??= await Task.Run(() => GetRawImage(music, false, token), token);
+                    if (picData is { Length: > 0 })
+                        artwork = await AnimatedWin2dControls.Impressionist.ArtworkPixelDecoder
+                            .LoadSquareRgba8FromImageBytesAsync(picData, ct: token);
                 }
             }
 
             if (token.IsCancellationRequested) return;
 
-            // SMTC 不需要原图分辨率。优先发送已经生成的缩略图缓存，
-            // 让待进入 UI 队列的闭包不再捕获几十 MB 的原始封面。
-            byte[]? mediaCover = picData;
+            // 正常路径只保留共享文件；缓存失败时才保留原图/已有字节用于兜底。
+            string? mediaCoverPath = null;
+            byte[]? mediaFallbackCover = picData;
             if (music.ImageHash is { Length: > 0 })
             {
-                var mediaThumbPath = CoverLoadQueue.GetThumbCachePath(music.ImageHash, CoverLoadQueue.CoverSize);
-                if (File.Exists(mediaThumbPath))
+                string rawPath = FindRawCachePath(music.ImageHash);
+                try
                 {
-                    try { mediaCover = await File.ReadAllBytesAsync(mediaThumbPath, token); }
-                    catch (FileNotFoundException) { }
+                    if (File.Exists(rawPath) && new FileInfo(rawPath).Length > 0)
+                    {
+                        // 展示缓存生成失败仍可直接使用原图，字节也保留到实际打开文件后。
+                        mediaCoverPath = rawPath;
+                        bool hadDisplayCache = File.Exists(PlaybackCoverImage.GetCachePath(rawPath));
+                        mediaCoverPath = await Task.Run(
+                            () => PlaybackCoverImage.GetOrCreateAsync(rawPath, token), token);
+                        mediaFallbackCover = null;
+                        if (music.IsRemote && !hadDisplayCache && mediaCoverPath != rawPath)
+                            await webDav.TrimCoverCacheAsync(rawPath, token);
+                    }
                 }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { logger.LogWarning(ex, "准备系统媒体封面缓存失败，保留原图兜底"); }
             }
             picData = null;
 
@@ -146,19 +170,22 @@ public sealed class CoverPresentationService(AppState state, ApplicationTasks ta
             });
 
             // --- 阶段 D: 更新系统媒体控制 (SMTC) ---
-            // 同样在后台运行，避免 SMTC 的 COM 组件调用阻塞 UI
+            // 在 UI 线程提交；实际文件打开由媒体服务的后台任务处理。
             App.MainWindow.DispatcherQueue.TryEnqueue(() =>
             {
+                var fallbackCover = mediaFallbackCover;
+                mediaFallbackCover = null;
                 if (_disposed || state.Lifecycle.Phase == AppPhase.Stopping || token.IsCancellationRequested || version != Volatile.Read(ref _coverUpdateVersion) ||
                     !ReferenceEquals(music, state.Playback.CurrentPlayingMusic)) return;
 
                 media.UpdateSystemMediaControlsState();
                 media.UpdateTimelineProperties(TimeSpan.Zero, music.Duration);
-                _ = media.UpdateMediaInfo(
+                _ = media.UpdateMediaInfoFromFile(
                     music.Title,
                     music.Author,
                     music.Album,
-                    mediaCover);
+                    mediaCoverPath,
+                    fallbackCover);
             });
         }
         catch (OperationCanceledException)

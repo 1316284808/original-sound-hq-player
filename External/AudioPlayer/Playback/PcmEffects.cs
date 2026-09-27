@@ -9,6 +9,7 @@ internal sealed class PcmEffects : IDisposable
 
     private sealed record Target(DspSettings Settings, double Gain, ConvolutionFilter? Filter = null, double ConvolutionGain = 1);
     private ConvolutionFilter? _filter, _renderFilter;
+    private ConvolutionFilter? _continuedFilter, _continuedTargetFilter;
     private string? _impulsePath;
     private string? _curveKey;
     private bool _autoHeadroom;
@@ -52,10 +53,12 @@ internal sealed class PcmEffects : IDisposable
     private int _gainFrames;
     private double _balance, _width = 1, _crossfeed, _swap, _mono;
     private double _lowLeft, _lowRight;
+    private readonly DynamicsProcessor _dynamics;
 
     internal PcmEffects(int rate, int channels)
     {
         _rate = rate; _channels = channels;
+        _dynamics = new(rate, channels);
         _lowPassAlpha = 1 - Math.Exp(-2 * Math.PI * 700 / rate);
         _parameterStep = 1.0 / Math.Max(1, rate / 50);
     }
@@ -252,6 +255,8 @@ internal sealed class PcmEffects : IDisposable
     /// <summary>仅由渲染线程在重新启用 DSP 时调用，丢弃旁路前的平滑值和尾音。</summary>
     internal void ResetRenderState()
     {
+        _continuedFilter = _continuedTargetFilter = null;
+        _dynamics.Reset();
         _renderTarget = null;
         _renderFilter?.Reset();
         _oldFilter = null;
@@ -260,6 +265,39 @@ internal sealed class PcmEffects : IDisposable
         _gain = 1;
         _gainStep = _lowLeft = _lowRight = 0;
     }
+
+    /// <summary>Move render history across a gapless boundary, retaining each track's own loudness target.
+    /// Only the audio thread calls this, after it has stopped rendering the previous session.</summary>
+    internal void ContinueFrom(PcmEffects previous)
+    {
+        _renderTarget = previous._renderTarget;
+        _gain = previous._gain;
+        _balance = previous._balance;
+        _width = previous._width;
+        _crossfeed = previous._crossfeed;
+        _swap = previous._swap;
+        _mono = previous._mono;
+        _lowLeft = previous._lowLeft;
+        _lowRight = previous._lowRight;
+        _dynamics.ContinueFrom(previous._dynamics);
+        // Reuse only identical filters, transferring exclusive render ownership instead of
+        // copying history. Cached curves use reference equality; file IRs compare coefficients.
+        var target = Volatile.Read(ref _target);
+        if (target.Filter != null && previous._renderFilter is { } filter
+            && target.Filter.HasSameCoefficients(filter))
+        {
+            _continuedTargetFilter = target.Filter;
+            _continuedFilter = _renderFilter = filter;
+            _convolutionMix = previous._convolutionMix;
+            _convolutionGain = previous._convolutionGain;
+            _oldFilter = previous._oldFilter;
+            _oldMix = previous._oldMix;
+            _oldGain = previous._oldGain;
+        }
+    }
+
+    internal void ApplyDynamics(Span<double> samples, int frames) =>
+        _dynamics.Process(samples, frames, Volatile.Read(ref _target).Settings);
 
     /// <summary>先施加固定响度增益和前置衰减；.NET 11 Span 热路径无锁、无分配。</summary>
     internal void ApplyInput(Span<double> samples, int frames)
@@ -347,6 +385,11 @@ internal sealed class PcmEffects : IDisposable
     internal void ApplyConvolution(Span<double> samples, int frames)
     {
         var filter = _renderTarget?.Filter;
+        if (_continuedTargetFilter != null)
+        {
+            if (ReferenceEquals(filter, _continuedTargetFilter)) filter = _continuedFilter;
+            else _continuedFilter = _continuedTargetFilter = null;
+        }
         if (!ReferenceEquals(filter, _renderFilter))
         {
             _oldFilter = _renderFilter;

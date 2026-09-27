@@ -32,7 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 与主程序共用同一套 IPC 契约（信封/序列化/常量），保证协议逐字节兼容 -->
+    <!-- 与主程序共用管道分帧、版本握手和载荷序列化；两端须同步部署 -->
     <ProjectReference Include="..\BassPlayerIpc.Shared\BassPlayerIpc.Shared.csproj" />
   </ItemGroup>
 

@@ -30,6 +30,15 @@ public sealed class AppearancePreferencesState : ObservableObject
     public int AppWidth { get; set => SetProperty(ref field, value); } = 1440;
     public int AppHeight { get; set => SetProperty(ref field, value); } = 810;
     public string BackdropType { get; set => SetProperty(ref field, value); } = "TransparentAcrylic";
+    public string WindowBackgroundImagePath { get; set => SetProperty(ref field, value ?? string.Empty); } = string.Empty;
+    public double WindowBackgroundBlurAmount
+    {
+        get => field;
+        set
+        {
+            if (double.IsFinite(value)) SetProperty(ref field, Math.Clamp(value, 0, 100));
+        }
+    } = 20;
     public bool IsDarkMode { get; set => SetProperty(ref field, value); } = false;
     public FontInfo FontFamily { get; set => SetProperty(ref field, value); }
     public Color CustomColor { get; set => SetProperty(ref field, value); } = Color.FromArgb(0xFF, 0x80, 0x80, 0x80);

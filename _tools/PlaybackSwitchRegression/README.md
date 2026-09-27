@@ -1,10 +1,17 @@
 # Playback switch regressions
 
+`GaplessLifecycleTests` 覆盖按倍速折算的 10 秒准备窗口、未知时长、seek 离开窗口、关闭功能、
+DSP/校正/试听保留待播解码器和 PCM 环，以及不可即时取消的打开操作、只保留最新计划和退出收尾。
+`--test-playback-effects` 同时运行真实 FFmpeg 重采样器初始化失败释放检查。
+`--measure-playback-memory` 单独测量暖机后的倍速/压限循环分配；这不代表整个播放进程零分配。
+
+`PipeProtocolTests` 覆盖部分读取/连续帧、非法帧、握手失败、256 KiB 配置、取消/超时后的缓冲所有权、断开、队列上限、状态合并与关键事件保序。`--test-pipe` 同时执行跨进程真实命令处理及 Settings/EQ/DSP 顺序验证。
+
 `AtmosTests` 验证实验性 E-AC-3/JOC HDMI 直通：与 FFmpeg spdif 基准字节一致、
 六声道音轨封装为 192 kHz 双通道载波、ring/输出保真、52 字节格式跨线程完整性、
 seek/EOF 与默认关闭、共享输出临时切独占、ASIO 显式设备隔离。
 `AtmosAutomaticTests` 覆盖暂停时开关和 seek、PCM 回退不重抢独占、失败状态协议兼容、
-能力查询的线程与格式边界、真实 MMDevice 无效端点和 IPC 状态邮箱、设备丢失后的停止通知。
+能力查询的线程与格式边界、真实 MMDevice 无效端点和 IPC 状态管道、设备丢失后的停止通知。
 没有真实 HDMI/Atmos 设备出声验证。
 
 `SurroundTests` 覆盖实验性 5.1 开关隔离、侧/后环绕布局、WASAPI 格式、ASIO 路由、
@@ -20,7 +27,7 @@ IPC v7/v8 兼容、ASIO 模式保留与 Atmos 优先级。`ProgressTests` 覆盖
 dotnet run --project _tools/PlaybackSwitchRegression
 ```
 
-工具使用项目的 .NET 11 SDK、FFmpeg 包及仓库内 FFmpeg DLL。音频测试使用受控输出；IPC 测试启动独立测试进程，使用随机命名的共享内存和信号量。
+工具使用项目的 .NET 11 SDK、FFmpeg 包及仓库内 FFmpeg DLL。音频测试使用受控输出；IPC 测试启动独立测试进程，使用随机命名的持久 Named Pipe。
 
 默认测试包含合成 E-AC-3 5.1 M4A，验证随包 DLL 的实际解码能力、完整 PCM 时长、
 有效样本、稳定 EOF、EOF 后 seek/回到开头，并覆盖原声道/立体声与源率/44.1 kHz。

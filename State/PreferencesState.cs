@@ -28,6 +28,8 @@ public sealed class PreferencesState : ObservableObject
     public bool IsHoverScrollEnabled { get => Appearance.IsHoverScrollEnabled; set => Appearance.IsHoverScrollEnabled = value; }
     public string DefaultEntryComboBoxTag { get => General.DefaultEntryComboBoxTag; set => General.DefaultEntryComboBoxTag = value; }
     public string ThemeType { get => Appearance.ThemeType; set => Appearance.ThemeType = value; }
+    public string WindowBackgroundImagePath { get => Appearance.WindowBackgroundImagePath; set => Appearance.WindowBackgroundImagePath = value; }
+    public double WindowBackgroundBlurAmount { get => Appearance.WindowBackgroundBlurAmount; set => Appearance.WindowBackgroundBlurAmount = value; }
     public FontInfo DesktopLyricsFontFamily { get => Lyrics.DesktopLyricsFontFamily; set => Lyrics.DesktopLyricsFontFamily = value; }
     private void ForwardChange(object? sender, PropertyChangedEventArgs e) => OnPropertyChanged(e);
 

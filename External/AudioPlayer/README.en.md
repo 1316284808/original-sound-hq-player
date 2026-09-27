@@ -5,23 +5,33 @@
 The playback engine of the OriginalSound HQ Player — a self-contained
 NativeAOT single-file process decoupled from the UI. FFmpeg decoding plus a
 self-developed WASAPI/ASIO interop layer, communicating with the main app over
-the IPC contract in `External\BassPlayerIpc.Shared` (byte-compatible envelope
-and serialization; named objects `AudioPlayer_SharedMemory` /
-`AudioPlayer_RequestReady` / `AudioPlayer_ResponseReady` /
-`AudioPlayer_NotificationReady` / `AudioPlayer_SingleInstanceMutex`, plus the
-client liveness mutex `WinUIMusicPlayer_SingleInstanceMutex`).
+the IPC contract in `External\BassPlayerIpc.Shared`. All data transport uses persistent,
+current-user-only, byte-mode named pipes with a 24-byte versioned header and 64-bit request IDs.
+The handshake returns a process instance ID, checked across the command and state connections.
 
-Originally built on top of the bass family (bass / basswasapi / bassasio /
-bassdsd / bass_fx), those have been removed entirely. The architecture still
-mirrors the bass IPC surface one-to-one (see the mapping table at the end) so
-behavior can be cross-checked against the legacy implementation.
+- `OriginalSound_Audio_Control_v2`: ordered commands and execution acknowledgements.
+- `OriginalSound_Audio_State_v2`: latest progress/DSP snapshots and reliable bounded notifications.
+- `OriginalSound_Audio_Streaming_v2`: four persistent lanes for status, preparation, seek/refresh,
+  and play/pause/stop. Connections are established on demand and released when the remote session stops.
+
+All names honor `ORIGINALSOUND_IPC_SCOPE` for isolated tests. Single-instance and client-liveness
+mutexes remain; MMF and communication semaphores have been removed.
+`PipeCommandClient` preserves ordered coalescing barriers and never replays a timed-out command.
+Cancellation ends the caller's wait; late replies cannot write into returned caller buffers.
+Progress is pushed every 50 ms into a local client cache. Pending progress/DSP snapshots coalesce,
+while critical notifications retain order and fail the connection explicitly on overflow.
+No IPC I/O runs in the audio render callback. Limits are 2 KiB for ordinary commands, 256 KiB for
+complete device corrections, and 128 KiB for streaming descriptors.
+
+Deploy the main app and `Player/AudioPlayer.exe` together: handshake v3 adds gapless transitions and rate-aware progress, and rejects older peers. The pipe names retain their v2 suffix.
+The bass-family dependencies have been removed; the table below is a historical behavior reference.
 
 ## Architecture
 
 ```
 AudioPlayer.exe (NativeAOT single file, win-x64)
 ├── Program.cs                Entry: SustainedLowLatency + timeBeginPeriod(1) + IPC service
-├── PlayerIpcService.cs       MMF + semaphore IPC surface (request/response/notification)
+├── PlayerIpcService.cs       Persistent named pipes and playback-engine lifetime
 ├── Decode/
 │   ├── PcmDecoder.cs         FFmpeg decode → swresample → float64 interleaved
 │   │                         (unified path for PCM and DSD→PCM; DSD output rate = DSD/8,
@@ -31,6 +41,8 @@ AudioPlayer.exe (NativeAOT single file, win-x64)
 ├── Playback/
 │   ├── PlaybackEngine.cs     Engine: session lifecycle, output mode, watchdog recovery,
 │   │                         exclusive track-switch reuse
+│   ├── GaplessPreloader.cs   One preparation/cleanup worker with one replaceable pending request
+│   ├── GaplessSource.cs      Stable output source, splicing compatible sessions at a PCM frame boundary
 │   ├── Session.cs            Playback session: decode thread + ring buffer + EQ/gain
 │   │                         (IRenderSource)
 │   ├── Ring.cs               SPSC frame rings (session epoch guards against seek cross-talk;
@@ -48,6 +60,16 @@ AudioPlayer.exe (NativeAOT single file, win-x64)
 ```
 
 ## Audio Pipeline
+
+Gapless playback separates planning, preparation, and rendering. The UI caches its candidate by queue
+version and stops resending an acknowledged plan. Output/timeline changes invalidate it; failures retry
+with backoff. An ordered cancellation reply reconciles an already committed transition before replacement.
+The engine opens the next decoder within the last 10 seconds of wall-clock playback, or immediately for
+unknown duration. File probing stays on the worker. Ordinary DSP, correction, and preview updates target
+both sessions without reopening the pending decoder. Rate changes, seeking, pausing, output rebuilds,
+and disabling gapless still cancel preparation. The worker owns an unpublished session and disposes late
+results. Shutdown stops new plans and awaits cleanup; a timed-out native open retains its owner until it
+returns. The audio callback only splices sources. PCM ring capacity and float64 storage are unchanged.
 
 **Full float64** end to end: decode (swr `AV_SAMPLE_FMT_DBL`) → `PcmRing`
 (double interleaved) → EQ/volume/fade-in-out (double domain) → per-device

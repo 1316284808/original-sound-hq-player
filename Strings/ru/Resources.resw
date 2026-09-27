@@ -1643,7 +1643,7 @@
     <value>Отказ от ответственности</value>
   </data>
   <data name="ClearCoverCacheButton.Content" xml:space="preserve">
-    <value>Очистить кэш</value>
+    <value>Очистить кэш обложек</value>
   </data>
   <data name="AreUSureClearCoverCache" xml:space="preserve">
     <value>Очистить кэш обложек?</value>
@@ -1757,7 +1757,7 @@
     <value>Включить DSP</value>
   </data>
   <data name="DspMasterDescription" xml:space="preserve">
-    <value>При выключении обходит нормализацию, предварительное ослабление, EQ и эффекты каналов, сохраняя настройки.</value>
+    <value>Отключает изменение скорости, динамику и другие эффекты PCM, сохраняя настройки. Воспроизведение без пауз управляется отдельно.</value>
   </data>
   <data name="DspMasterBypass" xml:space="preserve">
     <value>DSP выключен: эффекты обойдены, настройки сохранены. Включите его в «Настройки → Звуковые эффекты».</value>
@@ -2172,7 +2172,7 @@
     <value>Кэшируется исходное аудио. При достижении лимита старые записи удаляются. Отключение прекращает загрузку; готовый кэш остаётся доступным.</value>
   </data>
   <data name="WebDavClearCacheButton.Content" xml:space="preserve">
-    <value>Очистить кэш</value>
+    <value>Очистить кэш воспроизведения</value>
   </data>
   <data name="MusicSources.Text" xml:space="preserve"><value>Источники музыки</value></data>
   <data name="WebDavPauseMenu.Text" xml:space="preserve"><value>Приостановить сканирование</value></data>
@@ -2269,5 +2269,42 @@ SHA-256: {5}
   </data>
   <data name="WebDavCachedAudio" xml:space="preserve">
     <value>WebDAV · Аудио кэшировано</value>
+  </data>
+  <data name="GaplessPlayback" xml:space="preserve">
+    <value>Воспроизведение без пауз</value>
+  </data>
+  <data name="GaplessPlaybackDescription" xml:space="preserve">
+    <value>Предзагрузка совместимых локальных PCM-треков без пауз и перекрёстного затухания. Для битовых потоков, сетевых источников и смены формата — обычные переходы.</value>
+  </data>
+  <data name="DspPlaybackRate" xml:space="preserve">
+    <value>Скорость воспроизведения</value>
+  </data>
+  <data name="DspPlaybackRateDescription" xml:space="preserve">
+    <value>0,25–5× с сохранением высоты тона. Изменения требуют буферизации с текущей позиции; 1× сохраняет исходные отсчёты. Сетевые потоки без перемотки воспроизводятся на скорости 1×.</value>
+  </data>
+  <data name="DspCompressor" xml:space="preserve">
+    <value>Компрессор / лимитер</value>
+  </data>
+  <data name="DspCompressorDescription" xml:space="preserve">
+    <value>Приглушает громкие фрагменты и усиливает тихие компенсирующим усилением. Каналы связаны; пики отсчётов ограничены −1 dBFS.</value>
+  </data>
+  <data name="DspCompressorThreshold" xml:space="preserve">
+    <value>Порог (dBFS)</value>
+  </data>
+  <data name="DspCompressorRatio" xml:space="preserve">
+    <value>Степень сжатия (:1)</value>
+  </data>
+  <data name="DspCompressorMakeup" xml:space="preserve">
+    <value>Компенсирующее усиление (дБ)</value>
+  </data>
+  <data name="WindowBackgroundTitle" xml:space="preserve"><value>Фоновое изображение главного окна</value></data>
+  <data name="WindowBackgroundImage" xml:space="preserve"><value>Фоновое изображение</value></data>
+  <data name="WindowBackgroundDescription" xml:space="preserve"><value>Выберите локальное изображение для главного окна. Удалите его, чтобы восстановить материал окна.</value></data>
+  <data name="WindowBackgroundChoose" xml:space="preserve"><value>Выбрать изображение</value></data>
+  <data name="WindowBackgroundClear" xml:space="preserve"><value>Убрать изображение</value></data>
+  <data name="WindowBackgroundBlur" xml:space="preserve"><value>Размытие</value></data>
+  <data name="WindowBackgroundLoadError" xml:space="preserve"><value>Не удалось загрузить фоновое изображение. Выберите доступный файл JPG, PNG, BMP или WebP.</value></data>
+  <data name="CacheCleanupCard.Header" xml:space="preserve">
+    <value>Очистка кэша</value>
   </data>
 </root>

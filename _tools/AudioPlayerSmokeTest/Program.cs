@@ -1,13 +1,13 @@
-using System.IO.MemoryMappedFiles;
+using System.Collections.Concurrent;
 using BassPlayerIpc.Shared;
 
 // AudioPlayer（BassPlayerSharp 替代）AOT 版冒烟测试：
 // 充当主程序客户端：握手 IPC → SetMusicUrl → Play → 轮询进度 → EQ → 设备枚举 → MusicEnd。
-// 用法: AudioPlayerSmokeTest <AOT BassPlayerSharp.exe 路径> <音频文件路径> [持续秒数]
+// 用法: AudioPlayerSmokeTest <AOT AudioPlayer.exe 路径> <音频文件路径> [持续秒数]
 
 if (args.Length < 2)
 {
-    Console.WriteLine("用法: AudioPlayerSmokeTest <BassPlayerSharp.exe> <音频文件> [秒]");
+    Console.WriteLine("用法: AudioPlayerSmokeTest <AudioPlayer.exe> <音频文件> [秒]");
     return 2;
 }
 string exePath = Path.GetFullPath(args[0]);
@@ -32,33 +32,21 @@ using var server = System.Diagnostics.Process.Start(new System.Diagnostics.Proce
 })!;
 Console.WriteLine($"[smoke] server pid={server.Id}");
 
-// 3. 连接共享内存与信号量（与主程序 IpcService 相同的握手）
-MemoryMappedFile mmf;
-MemoryMappedViewAccessor accessor;
-for (int i = 0; ; i++)
-{
-    try
-    {
-        mmf = MemoryMappedFile.OpenExisting(IpcConstants.MmfName);
-        accessor = mmf.CreateViewAccessor(0, IpcConstants.MmfSize);
-        break;
-    }
-    catch
-    {
-        if (i > 100) { Console.WriteLine("[smoke] FAIL: MMF 未出现"); return 1; }
-        Thread.Sleep(100);
-    }
-}
-using var _a = accessor;
-using var _m = mmf;
-using var requestReady = Semaphore.OpenExisting(IpcConstants.RequestSemaphoreName);
-using var responseReady = Semaphore.OpenExisting(IpcConstants.ResponseSemaphoreName);
-using var notificationReady = Semaphore.OpenExisting(IpcConstants.NotificationSemaphoreName);
-Console.WriteLine("[smoke] IPC 握手完成");
-
-int lastNotificationVersion = accessor.ReadInt32(IpcConstants.NotificationVersionOffset);
+// 3. Connect both persistent pipes and verify they belong to the same player instance.
+using var connectTimeout = new CancellationTokenSource(10000);
+using var transport = PipeCommandClient.ConnectAsync(IpcConstants.ControlPipeName, connectTimeout.Token).GetAwaiter().GetResult();
+using var states = PipeStateClient.ConnectAsync(IpcConstants.StatePipeName, connectTimeout.Token).GetAwaiter().GetResult();
+if (transport.InstanceId != states.InstanceId) throw new InvalidOperationException("Player instance mismatch");
 int playbackEnds = 0;
-using var transport = new MailboxClient(accessor, requestReady, responseReady);
+var notifications = new ConcurrentQueue<MessageTypeId>();
+states.NotificationReceived += (type, _) =>
+{
+    if (type == MessageTypeId.PlayEnded) Interlocked.Increment(ref playbackEnds);
+    notifications.Enqueue(type);
+};
+states.Start();
+if (!SpinWait.SpinUntil(() => states.CurrentDspState is not null, 5000)) throw new InvalidOperationException("Initial DSP state missing");
+Console.WriteLine("[smoke] Pipe 握手及初始 DSP 推送完成");
 byte[] responseBuffer = new byte[IpcConstants.MaxResponseSize];
 
 MessageTypeId Send(CommandId cmd, ReadOnlySpan<byte> payload, out ReadOnlySpan<byte> respPayload)
@@ -70,13 +58,19 @@ MessageTypeId Send(CommandId cmd, ReadOnlySpan<byte> payload, out ReadOnlySpan<b
 
 void PumpNotifications()
 {
-    int v = accessor.ReadInt32(IpcConstants.NotificationVersionOffset);
-    if (v == lastNotificationVersion) return;
-    lastNotificationVersion = v;
-    long off = IpcEnvelope.NotificationSlotOffset(v);
-    var typeId = IpcEnvelope.ReadMessageTypeId(accessor, off);
-    if (typeId == MessageTypeId.PlayEnded) playbackEnds++;
-    Console.WriteLine($"[smoke] 通知: {typeId}");
+    while (notifications.TryDequeue(out var type)) Console.WriteLine($"[smoke] 通知: {type}");
+}
+
+void StopPlayer()
+{
+    transport.Dispose();
+    states.Dispose();
+    if (!server.WaitForExit(10000))
+    {
+        server.Kill();
+        server.WaitForExit();
+        throw new InvalidOperationException("Player did not exit after pipe disconnect");
+    }
 }
 
 Span<byte> urlBuf = new byte[BinarySerializer.SetMusicUrlRequestSize];
@@ -128,6 +122,101 @@ t = Send(CommandId.Play, playBuf, out _);
 Console.WriteLine($"[smoke] Play(confirmed) → {t}（已收到执行确认）");
 Thread.Sleep(400); // 观察首段输出与通知
 PumpNotifications();
+
+// Memory experiment: one feature at a time; process counters are sampled by the client.
+if (args.Contains("--memory"))
+{
+    try
+    {
+        string scenario = args.FirstOrDefault(a => a.StartsWith("--scenario="))?[11..] ?? "baseline";
+        Console.WriteLine($"[memory-phase] {scenario}");
+        var settings = new DspSettings
+        {
+            PlaybackRate = scenario == "rate5" ? 5 : scenario == "rate025" ? 0.25 : 1,
+            CompressorEnabled = scenario == "compressor"
+        };
+        byte[] dspBytes = new byte[DspProtocol.SettingsSize];
+        void UpdateMemoryDsp(DspSettings value)
+        {
+            DspProtocol.WriteSettings(dspBytes, value);
+            if (Send(CommandId.UpdateDsp, dspBytes, out _) != MessageTypeId.Success)
+                throw new InvalidOperationException("Memory scenario DSP rejected");
+        }
+        void SampleProcess(string phase)
+        {
+            server.Refresh();
+            Console.WriteLine($"[memory-process] {phase},{server.PrivateMemorySize64},{server.WorkingSet64},{server.HandleCount},{server.Threads.Count}");
+        }
+        UpdateMemoryDsp(settings);
+        if (scenario == "gapless")
+        {
+            if (!SpinWait.SpinUntil(() => states.TryGetProgress(out var p) && p.Playing, 5000))
+                throw new InvalidOperationException("Playback not ready");
+            states.TryGetProgress(out var current);
+            var request = new GaplessRequest(current.Epoch, 91, mediaPath);
+            if (Send(CommandId.QueueNext, request.Write(), out _) != MessageTypeId.Success)
+                throw new InvalidOperationException("Memory scenario preload rejected");
+        }
+        for (int second = 0; second < runSeconds; second++)
+        {
+            if (scenario == "switch") UpdateMemoryDsp(settings with { PlaybackRate = second % 2 == 0 ? 1.5 : 1 });
+            Thread.Sleep(1000);
+            SampleProcess("playing");
+        }
+        Send(CommandId.MusicEnd, ReadOnlySpan<byte>.Empty, out _);
+        Console.WriteLine("[memory-phase] stopped");
+        Thread.Sleep(2000);
+        SampleProcess("stopped");
+        using var collect = EventWaitHandle.OpenExisting("Local\\AudioPlayerMemory-" + Environment.GetEnvironmentVariable("ORIGINALSOUND_IPC_SCOPE"));
+        collect.Set();
+        Thread.Sleep(2500);
+        SampleProcess("after-gc");
+        return 0;
+    }
+    finally { StopPlayer(); }
+}
+
+// Actual NativeAOT + persistent IPC + WASAPI integration for the new playback chain.
+if (args.Contains("--gapless"))
+{
+    try
+    {
+        string? rateOption = args.FirstOrDefault(a => a.StartsWith("--rate="));
+        double rate = rateOption == null ? 1.5 : double.Parse(rateOption[7..], System.Globalization.CultureInfo.InvariantCulture);
+        if (!double.IsFinite(rate) || rate is < 0.25 or > 5) throw new ArgumentOutOfRangeException(nameof(rate));
+        int drainTimeout = (int)Math.Ceiling(10000 / Math.Min(1, rate));
+        Span<byte> dsp = stackalloc byte[DspProtocol.SettingsSize];
+        DspProtocol.WriteSettings(dsp, new DspSettings { PlaybackRate = rate, CompressorEnabled = true });
+        if (Send(CommandId.UpdateDsp, dsp, out _) != MessageTypeId.Success)
+            throw new InvalidOperationException("DSP settings rejected");
+        if (!SpinWait.SpinUntil(() => states.TryGetProgress(out var p) && p.PlaybackRate == rate && p.Playing, 5000))
+            throw new InvalidOperationException("Speed change did not reach output telemetry");
+        states.TryGetProgress(out var initial);
+        long outputGeneration = states.CurrentDspState!.State.OutputGeneration;
+        var queue = new GaplessRequest(initial.Epoch, 77, mediaPath);
+        if (Send(CommandId.QueueNext, queue.Write(), out _) != MessageTypeId.Success)
+            throw new InvalidOperationException("Gapless queue rejected");
+        if (!SpinWait.SpinUntil(() => states.TryGetProgress(out var p) && p.GaplessToken == 77, drainTimeout))
+            throw new InvalidOperationException("Gapless transition missing");
+        states.TryGetProgress(out var transitioned);
+        if (playbackEnds != 0 || !transitioned.Playing || transitioned.Epoch == initial.Epoch
+            || transitioned.PlaybackRate != rate || states.CurrentDspState!.State.OutputGeneration != outputGeneration)
+            throw new InvalidOperationException("Transition stopped or rebuilt the output");
+        Console.WriteLine($"[smoke] PASS: gapless at {rate}x + compressor, unchanged native output, no PlayEnded at boundary");
+        var pause = Send(CommandId.PlayButton, ReadOnlySpan<byte>.Empty, out var paused);
+        if (pause != MessageTypeId.PlayState || BinarySerializer.ReadPlayStateResponse(paused).IsPlaying)
+            throw new InvalidOperationException("Pause after transition failed");
+        var resume = Send(CommandId.PlayButton, ReadOnlySpan<byte>.Empty, out var resumed);
+        if (resume != MessageTypeId.PlayState || !BinarySerializer.ReadPlayStateResponse(resumed).IsPlaying)
+            throw new InvalidOperationException("Resume after transition failed");
+        if (!SpinWait.SpinUntil(() => playbackEnds > 0, drainTimeout) || playbackEnds != 1)
+            throw new InvalidOperationException("Final output did not drain exactly once");
+        Console.WriteLine("[smoke] PASS: pause/resume after adoption and exactly one final end notification");
+        Send(CommandId.MusicEnd, ReadOnlySpan<byte>.Empty, out _);
+        return 0;
+    }
+    finally { StopPlayer(); }
+}
 
 // Natural end regression: real output + IPC, optionally seek near EOF to shorten a long fixture.
 // --expect-end --fade --seek-near-end --next=<file> (omit --seek-near-end for a full playthrough).
@@ -242,7 +331,7 @@ if (args.Contains("--trackchange"))
     Console.WriteLine("[smoke] 换曲 Play 已发送");
     for (int i = 0; i < 8; i++) { Thread.Sleep(400); t = Send(CommandId.GetTimeProgress, ReadOnlySpan<byte>.Empty, out var pr); if (t == MessageTypeId.TimeProgress) { var (c, tt) = BinarySerializer.ReadTimeProgress(pr); Console.WriteLine($"[smoke] 换曲后进度 {c / 1000.0:F1}s / {tt / 1000.0:F1}s"); } PumpNotifications(); }
     Send(CommandId.MusicEnd, ReadOnlySpan<byte>.Empty, out _);
-    server.Kill(); server.WaitForExit(2000);
+    StopPlayer();
     Console.WriteLine("[smoke] 换曲测试完成");
     return 0;
 }
@@ -261,6 +350,12 @@ for (int i = 0; i < runSeconds * 4; i++)
     PumpNotifications();
     Thread.Sleep(250);
 }
+
+if (!states.TryGetProgress(out var cachedProgress) || cachedProgress.TotalMs <= 0)
+    throw new InvalidOperationException("Progress push cache did not receive a complete snapshot");
+Console.WriteLine($"[smoke] 推送进度缓存: {cachedProgress.CurrentMs}/{cachedProgress.TotalMs}ms rev={cachedProgress.Revision}");
+t = Send(CommandId.UpdateDeviceCorrections, DeviceCorrectionProtocol.Write(new()), out _);
+if (t != MessageTypeId.Success) throw new InvalidOperationException("Device correction command failed");
 
 // seek 测试
 Span<byte> posBuf = new byte[BinarySerializer.ChangePositionRequestSize];
@@ -317,7 +412,6 @@ if (t == MessageTypeId.TimeProgress)
 }
 PumpNotifications();
 
-server.Kill();
-server.WaitForExit(3000);
+StopPlayer();
 Console.WriteLine("[smoke] 完成");
 return 0;

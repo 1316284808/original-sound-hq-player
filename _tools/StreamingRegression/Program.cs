@@ -30,7 +30,7 @@ player.StartInfo.Environment["ORIGINALSOUND_IPC_SCOPE"] = scope;
 player.Start();
 var output = player.StandardOutput.ReadToEndAsync();
 var errors = player.StandardError.ReadToEndAsync();
-var client = new StreamingClient();
+using var client = new StreamingClient();
 try
 {
     var capabilities = await client.SendAsync(new());

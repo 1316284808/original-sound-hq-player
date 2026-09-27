@@ -50,6 +50,13 @@ public sealed class SettingsCoordinator(AppState state, MusicDatabaseService dat
     {
         switch (e.PropertyName)
         {
+            case nameof(state.Preferences.WindowBackgroundImagePath):
+            case nameof(state.Preferences.WindowBackgroundBlurAmount):
+                if (state.Lifecycle.IsReady)
+                {
+                    _ = database.SaveSettingAsync();
+                }
+                break;
             case nameof(state.Preferences.DesktopLyricsFontFamily):
                 if (state.Preferences.DesktopLyricsFontFamily is { } font)
                 {

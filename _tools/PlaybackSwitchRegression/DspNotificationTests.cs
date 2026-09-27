@@ -11,50 +11,65 @@ internal static unsafe partial class Program
 
     private static int DspWriter(string name)
     {
-        using var mailbox = new DspStateMailbox(create: false, name);
-        for (int i = 1; i <= 10000; i++) mailbox.Publish(NumberedState(i));
+        using var writer = new PipeStateServer();
+        using var timeout = new CancellationTokenSource(15000);
+        var server = writer.RunAsync(name, Guid.NewGuid(), timeout.Token);
+        for (int i = 1; i <= 10000; i++)
+        {
+            writer.PublishDsp(NumberedState(i));
+            if (i % 100 == 0) Thread.Sleep(1);
+        }
+        try { server.GetAwaiter().GetResult(); }
+        catch (IOException) { }
         return 0;
     }
 
     private static void RunDspNotificationTests()
     {
-        Run("DSP mailbox: late subscription, NaN deduplication and coalesced wakeups", () =>
+        Run("DSP pipe: late subscription, NaN deduplication and coalesced snapshots", () =>
         {
-            string name = "DspTest-" + Guid.NewGuid().ToString("N");
-            using var writer = new DspStateMailbox(create: true, name);
             var initial = new DspState(0, false, 0, LoudnessStatus.Off, 0, double.NaN);
-            Require(writer.Read() == null, "unpublished state must be unavailable");
-            Require(writer.Publish(initial), "initial state missing");
-            using var reader = new DspStateMailbox(create: false, name);
-            Require(reader.Read() is { Revision: 1 } first && first.State == initial, "late reader missed initial state");
-            Require(reader.Changed.WaitOne(1000), "initial wakeup missing");
-            Require(!writer.Publish(initial) && !reader.Changed.WaitOne(0), "NaN causes duplicate notifications");
-            for (int i = 1; i <= 100; i++) writer.Publish(NumberedState(i));
-            Require(reader.Changed.WaitOne(1000), "burst wakeup lost");
-            Require(reader.Read() is { Revision: 101 } last && last.State == NumberedState(100), "burst lost final state");
-            Require(!reader.Changed.WaitOne(0), "wakeups should coalesce");
+            using var fixture = new StatePipeFixture(initial);
+            Require(fixture.Changed.WaitOne(5000), "initial publication missing");
+            Require(fixture.Read() is { Revision: 1 } first && first.State == initial, "late reader missed initial state");
+            Require(!fixture.Publish(initial), "NaN causes duplicate notifications");
+            try
+            {
+                fixture.Publish(initial with { OutputDeviceId = new string('x', 257) });
+                throw new Exception("unrepresentable device identity was accepted");
+            }
+            catch (ArgumentException) { }
+            Require(fixture.Server.CurrentDspState?.Revision == 1, "invalid publication replaced the previous state");
+            for (int i = 1; i <= 100; i++) fixture.Publish(NumberedState(i));
+            Require(SpinWait.SpinUntil(() => fixture.Read()?.Revision == 101, 5000), "burst lost final state");
+            Require(fixture.Read()!.State == NumberedState(100), "final state is incoherent");
         });
 
-        Run("DSP mailbox: cross-process burst never exposes torn or regressing snapshots", () =>
+        Run("DSP pipe: cross-process burst never exposes torn or regressing snapshots", () =>
         {
             string name = "DspTest-" + Guid.NewGuid().ToString("N");
-            using var reader = new DspStateMailbox(create: true, name);
             var info = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true };
             info.ArgumentList.Add("--dsp-writer"); info.ArgumentList.Add(name);
             using var process = Process.Start(info)!;
             try
             {
+                using var connect = new CancellationTokenSource(5000);
+                using var reader = PipeStateClient.ConnectAsync(name, connect.Token).GetAwaiter().GetResult();
+                using var changed = new AutoResetEvent(false);
+                reader.DspStateChanged += _ => changed.Set();
+                reader.Start();
                 long revision = 0;
                 var timeout = Stopwatch.StartNew();
                 while (revision < 10000 && timeout.Elapsed < TimeSpan.FromSeconds(15))
                 {
-                    Require(reader.Changed.WaitOne(5000), "writer stopped notifying");
-                    var snapshot = reader.Read()!;
+                    Require(changed.WaitOne(5000), "writer stopped notifying");
+                    var snapshot = reader.CurrentDspState!;
                     Require(snapshot.Revision >= revision && snapshot.State == NumberedState((int)snapshot.Revision),
                         "snapshot torn or revision regressed");
                     revision = snapshot.Revision;
                 }
                 Require(revision == 10000, "final snapshot missing");
+                reader.Dispose();
                 Require(process.WaitForExit(5000) && process.ExitCode == 0, "writer failed");
             }
             finally { if (!process.HasExited) { process.Kill(); process.WaitForExit(); } }
@@ -63,9 +78,9 @@ internal static unsafe partial class Program
         Run("DSP engine: settings, session replacement and effects changes actively publish", () =>
         {
             string name = "DspTest-" + Guid.NewGuid().ToString("N");
-            using var mailbox = new DspStateMailbox(create: true, name);
+            using var mailbox = new StatePipeFixture();
             var service = (PlayerIpcService)RuntimeHelpers.GetUninitializedObject(typeof(PlayerIpcService));
-            Set(service, "_dspMailbox", mailbox);
+            Set(service, "_stateServer", mailbox.Server);
             var engine = Engine("DirectSound");
             var streamLock = new object();
             Set(engine, "_streamLock", streamLock);
@@ -91,7 +106,7 @@ internal static unsafe partial class Program
             }
             finally
             {
-                // Drain any worker before disposing the mailbox; avoid touching global endpoint registration.
+                // Drain any worker before disposing the pipe publisher; avoid touching global endpoint registration.
                 lock (streamLock) { Set(engine, "_disposed", 1); Invoke(engine, "SetSession", (object?)null); }
             }
         });

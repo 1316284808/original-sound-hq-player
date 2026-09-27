@@ -17,7 +17,6 @@ namespace WinUIMusicPlayer.Controls
 {
     public sealed partial class ImageSwitcher : UserControl
     {
-        private const int MaxCoverDecodePixelWidth = 1536;
         private static ILogger<ImageSwitcher> _logger = WinUIMusicPlayer.App.GetLogger<ImageSwitcher>();
 
         public int CornerRadiusAmount
@@ -151,11 +150,21 @@ namespace WinUIMusicPlayer.Controls
                 {
                     try
                     {
-                        byte[] rawBytes = await File.ReadAllBytesAsync(rawPath, token);
-                        imageSource = await ImageHelper.DecodeToBitmapAsync(rawBytes, MaxCoverDecodePixelWidth, token);
+                        string coverPath = await Task.Run(
+                            () => PlaybackCoverImage.GetOrCreateAsync(rawPath, token), token);
+                        imageSource = await ImageHelper.DecodeFileToBitmapAsync(coverPath, token);
                     }
                     catch (OperationCanceledException) { return; }
-                    catch (Exception ex) { _logger.LogError(ex, "ImageSwitcher 从缓存加载失败"); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "ImageSwitcher 展示缓存不可用，尝试原图"); }
+                    if (imageSource is null)
+                    {
+                        try
+                        {
+                            imageSource = await ImageHelper.DecodeFileToBitmapAsync(
+                                rawPath, token, PlaybackCoverImage.MaxPixelSize);
+                        }
+                        catch (OperationCanceledException) { return; }
+                    }
                 }
             }
 

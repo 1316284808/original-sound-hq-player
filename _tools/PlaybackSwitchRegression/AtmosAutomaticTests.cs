@@ -89,13 +89,13 @@ internal static unsafe partial class Program
             using var pcm = Source(engine, RenderKind.Pcm);
             Require(Invoke(engine, "CreateSharedOutput", pcm, -1) == null, "missing pinned endpoint opened default speaker");
         });
-        Run("Auto Atmos: missing real endpoint stops safely and publishes failure through IPC mailbox", () =>
+        Run("Auto Atmos: missing real endpoint stops safely and publishes failure through IPC pipe", () =>
         {
             string name = "AtmosMissingEndpoint-" + Guid.NewGuid().ToString("N");
-            using var writer = new DspStateMailbox(true, name);
-            using var reader = new DspStateMailbox(false, name);
+            using var writer = new StatePipeFixture();
+            var reader = writer;
             var ipc = (AudioPlayer.PlayerIpcService)RuntimeHelpers.GetUninitializedObject(typeof(AudioPlayer.PlayerIpcService));
-            Set(ipc, "_dspMailbox", writer);
+            Set(ipc, "_stateServer", writer.Server);
             var engine = Engine("WasapiShared");
             Set(engine, "_streamLock", new object());
             Set(engine, "_ipc", ipc);

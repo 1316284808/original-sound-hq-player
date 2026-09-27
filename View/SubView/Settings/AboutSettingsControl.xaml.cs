@@ -16,12 +16,15 @@ namespace WinUIMusicPlayer.View.SubView.Settings
     {
         private ContentDialog? _thirdPartyDialog;
         public SettingsViewModel ViewModel { get; }
+        public WebDavSourcesViewModel CacheViewModel { get; }
 
         public AboutSettingsControl()
         {
-            InitializeComponent();
             ViewModel = App.Services.GetRequiredService<SettingsViewModel>();
+            CacheViewModel = App.Services.GetRequiredService<WebDavSourcesViewModel>();
+            InitializeComponent();
             DataContext = this;
+            Loaded += async (_, _) => await CacheViewModel.LoadAsync();
             Unloaded += OnUnloaded;
         }
 
@@ -35,6 +38,11 @@ namespace WinUIMusicPlayer.View.SubView.Settings
                 AutoScrollViewControl.PointerExited -= AutoScrollHover_PointerExited;
                 AutoScrollViewControl.PointerCanceled -= AutoScrollHover_PointerCanceled;
             }
+        }
+
+        private string GetCopyrightDescription()
+        {
+            return $"© {DateTime.Now.Year} Sennpei Studio";
         }
 
         private void SpectrumVisualization_Click(object sender, RoutedEventArgs e)
@@ -77,6 +85,7 @@ namespace WinUIMusicPlayer.View.SubView.Settings
             if (await DialogHelper.ShowConfirmAsync(XamlRoot, "AreUSureClearCoverCache"))
             {
                 await ViewModel.AppViewModel.ClearCoverCacheCommand.ExecuteAsync(null);
+                await CacheViewModel.RefreshCacheSizeAsync();
             }
         }
 

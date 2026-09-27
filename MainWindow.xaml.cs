@@ -30,6 +30,7 @@ namespace WinUIMusicPlayer
 {
     public sealed partial class MainWindow : WindowEx, IDisposable
     {
+        public AppViewModel ViewModel => App.Services.GetRequiredService<AppViewModel>();
         public event EventHandler themeChanged;
         public event EventHandler styleChanged;
         public event EventHandler customStyleChanged;
@@ -47,6 +48,7 @@ namespace WinUIMusicPlayer
         public MainWindow()
         {
             InitializeComponent();
+            WindowBackground.LoadFailed += OnWindowBackgroundLoadFailed;
             AppData.HWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
             SetWindow();
             AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode;
@@ -193,6 +195,7 @@ namespace WinUIMusicPlayer
         {
             _ = DispatcherQueue.EnqueueAsync(() =>
             {
+                WindowBackground.RefreshForAccessibility();
                 SetAppStyle();
                 if (AppSettings.AppTheme == "Default")
                 {
@@ -399,9 +402,13 @@ namespace WinUIMusicPlayer
         {
             if (dispose)
             {
+                WindowBackground.LoadFailed -= OnWindowBackgroundLoadFailed;
+                WindowBackground.Dispose();
                 _notifyIconControl?.Dispose();
                 _taskbarHelper?.Dispose();
             }
         }
+
+        private void OnWindowBackgroundLoadFailed(object? sender, EventArgs args) => ViewModel.ReportWindowBackgroundError();
     }
 }

@@ -1,8 +1,6 @@
-using System.Buffers.Binary;
-using System.IO.Pipes;
+using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
 
 namespace BassPlayerIpc.Shared;
 
@@ -87,6 +85,7 @@ public sealed record StreamReply
     public bool CanSeek { get; init; }
     public long PositionMs { get; init; }
     public long? DurationMs { get; init; }
+    public double PlaybackRate { get; init; } = 1;
     public long BufferedMs { get; init; }
     public long SeekId { get; init; }
 }
@@ -95,48 +94,87 @@ public sealed record StreamReply
 [JsonSerializable(typeof(StreamReply))]
 public partial class StreamingJson : JsonSerializerContext;
 
-/// <summary>Bounded control channel, separate from real-time mailboxes. Never transports audio samples.</summary>
+/// <summary>JSON streaming descriptors use the same bounded pipe framing as binary playback commands.</summary>
 public static class StreamingWire
 {
-    public static readonly string PipeName = "OriginalSound_AudioPlayer_Streaming_v1" + IpcConstants.Scope;
+    public static readonly string PipeName = IpcConstants.StreamingPipeName;
     public const int MaxPayload = 128 * 1024;
-    public static async Task WriteAsync<T>(Stream stream, T message, JsonTypeInfo<T> type, CancellationToken ct)
-    {
-        byte[] body = JsonSerializer.SerializeToUtf8Bytes(message, type);
-        if (body.Length > MaxPayload) throw new InvalidDataException("Streaming descriptor too large.");
-        byte[] length = new byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(length, body.Length);
-        await stream.WriteAsync(length, ct);
-        await stream.WriteAsync(body, ct);
-        await stream.FlushAsync(ct);
-    }
-    public static async Task<T> ReadAsync<T>(Stream stream, JsonTypeInfo<T> type, CancellationToken ct)
-    {
-        byte[] length = new byte[4];
-        await stream.ReadExactlyAsync(length, ct);
-        int count = BinaryPrimitives.ReadInt32LittleEndian(length);
-        if (count is <= 0 or > MaxPayload) throw new InvalidDataException("Invalid streaming frame.");
-        byte[] body = new byte[count];
-        await stream.ReadExactlyAsync(body, ct);
-        return JsonSerializer.Deserialize(body, type) ?? throw new InvalidDataException("Empty streaming frame.");
-    }
 }
 
-public sealed class StreamingClient
+public sealed class StreamingClient : IDisposable, IAsyncDisposable
 {
+    private sealed class Lane
+    {
+        public readonly SemaphoreSlim Gate = new(1, 1);
+        public PipeCommandClient? Connection;
+    }
+    // A slow seek/refresh or preparation cannot hold up explicit play/pause/stop or status queries.
+    private readonly Lane[] _lanes = [new(), new(), new(), new()];
+    private readonly CancellationTokenSource _lifetime = new();
     private long _request;
+    private int _disposed;
+
     public async Task<StreamReply> SendAsync(StreamCommand command, CancellationToken ct = default)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        using var pipe = new NamedPipeClientStream(".", StreamingWire.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        await pipe.ConnectAsync(timeout.Token);
-        command = command with { RequestId = Interlocked.Increment(ref _request) };
-        await StreamingWire.WriteAsync(pipe, command, StreamingJson.Default.StreamCommand, timeout.Token);
-        var response = await StreamingWire.ReadAsync(pipe, StreamingJson.Default.StreamReply, timeout.Token);
-        if (response.Version != 1 || response.RequestId != command.RequestId) throw new InvalidDataException("Streaming protocol mismatch.");
-        return response;
+        var lane = _lanes[command.Method switch { "status" or "capabilities" => 0, "prepare" => 1, "seek" or "refresh" => 2, _ => 3 }];
+        await lane.Gate.WaitAsync(timeout.Token).ConfigureAwait(false);
+        byte[]? buffer = null;
+        try
+        {
+            timeout.Token.ThrowIfCancellationRequested();
+            lane.Connection ??= await PipeCommandClient.ConnectAsync(StreamingWire.PipeName, timeout.Token).ConfigureAwait(false);
+            command = command with { RequestId = Interlocked.Increment(ref _request) };
+            byte[] payload = JsonSerializer.SerializeToUtf8Bytes(command, StreamingJson.Default.StreamCommand);
+            if (payload.Length > StreamingWire.MaxPayload) throw new InvalidDataException("Streaming descriptor too large.");
+            buffer = ArrayPool<byte>.Shared.Rent(StreamingWire.MaxPayload);
+            var (type, length) = await lane.Connection.RequestAsync(CommandId.StreamControl, payload, buffer,
+                timeoutMs: 10000, token: timeout.Token).ConfigureAwait(false);
+            if (type != MessageTypeId.Success) throw new IOException("Streaming command was not acknowledged.");
+            var response = JsonSerializer.Deserialize(buffer.AsSpan(0, length), StreamingJson.Default.StreamReply)
+                ?? throw new InvalidDataException("Empty streaming reply.");
+            if (response.Version != 1 || response.RequestId != command.RequestId) throw new InvalidDataException("Streaming protocol mismatch.");
+            return response;
+        }
+        catch
+        {
+            // Execution may already have happened. Close the failed lane, but never automatically replay a command.
+            if (lane.Connection is not null) await lane.Connection.DisposeAsync().ConfigureAwait(false);
+            lane.Connection = null;
+            throw;
+        }
+        finally
+        {
+            if (buffer is not null) ArrayPool<byte>.Shared.Return(buffer);
+            lane.Gate.Release();
+        }
     }
+
+    public async Task DisconnectAsync()
+    {
+        foreach (var lane in _lanes)
+        {
+            await lane.Gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (lane.Connection is not null) await lane.Connection.DisposeAsync().ConfigureAwait(false);
+                lane.Connection = null;
+            }
+            finally { lane.Gate.Release(); }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        _lifetime.Cancel();
+        await DisconnectAsync().ConfigureAwait(false);
+        _lifetime.Dispose();
+    }
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
     public Task<StreamReply> PrepareAsync(PlaybackSource source, Guid sessionId, CancellationToken ct = default)
         => SendAsync(new() { Method = "prepare", Source = source, SessionId = sessionId }, ct);
     public Task<StreamReply> PrepareAsync(PlaybackSource source, Guid sessionId, long positionMs, CancellationToken ct = default)

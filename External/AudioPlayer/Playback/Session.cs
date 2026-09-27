@@ -16,6 +16,8 @@ internal sealed class Session : IRenderSource, IDisposable
     public long TimelineEpoch { get; private set; } = Interlocked.Increment(ref _nextTimelineEpoch);
 
     private PcmDecoder? _pcm;
+    private TempoProcessor? _tempo;
+    public double PlaybackRate { get; private init; } = 1;
     public bool CanSeek { get; private set; } = true;
     public bool InputEnded => _pcmRing?.InputEnded ?? _dopRing?.InputEnded ?? _dsdRing?.InputEnded ?? _iecRing?.InputEnded ?? false;
     public bool IsBuffering => _pcmRing?.IsBuffering ?? _dopRing?.IsBuffering ?? _dsdRing?.IsBuffering ?? _iecRing?.IsBuffering ?? false;
@@ -121,7 +123,7 @@ internal sealed class Session : IRenderSource, IDisposable
 
     public static Session? Open(PlaybackEngine engine, string path, RenderKind kind,
         int dsdPcmFreq, int dsdGainDb, int latencyMs, int? forcedRate = null, int? forcedChannels = null,
-        int? maxChannels = null, bool experimentalSurround51 = false, AtmosProbeCache? atmosProbeCache = null, PlaybackSource? source = null, CancellationToken cancellationToken = default)
+        int? maxChannels = null, bool experimentalSurround51 = false, AtmosProbeCache? atmosProbeCache = null, PlaybackSource? source = null, CancellationToken cancellationToken = default, double playbackRate = 1)
     {
         Session? pending = null;
         IDisposable? input = null;
@@ -134,6 +136,8 @@ internal sealed class Session : IRenderSource, IDisposable
                     var dec = new PcmDecoder();
                     input = dec;
                     if (!dec.Open(path, dsdPcmFreq, dsdGainDb, forcedRate, forcedChannels, maxChannels, experimentalSurround51, source, cancellationToken)) { dec.Dispose(); return null; }
+                    // Non-seekable streams cannot safely rebuild at the audible position after a rate change.
+                    if (!dec.CanSeek) playbackRate = 1;
                     int rate = dec.SampleRate;
                     int channels = dec.Channels;
                     int ringFrames = source?.Kind == PlaybackSourceKind.Http
@@ -143,6 +147,8 @@ internal sealed class Session : IRenderSource, IDisposable
                     var s = new Session(engine, kind, channels, rate, rate, dec.TotalMs, rate)
                     {
                         _pcm = dec,
+                        PlaybackRate = playbackRate,
+                        _tempo = playbackRate == 1 ? null : new TempoProcessor(rate, channels, playbackRate),
                         ChannelMask = dec.ChannelMask,
                         _pcmRing = new PcmRing(channels, ringFrames, initialFrames, source?.Kind == PlaybackSourceKind.Http ? -1 : 300,
                             source?.Kind == PlaybackSourceKind.Http ? Math.Min(ringFrames, (int)((long)rate * source.Buffer.ResumeMs / 1000)) : 0,
@@ -290,10 +296,10 @@ internal sealed class Session : IRenderSource, IDisposable
 
     public long CurrentMs => FramesToMs(Volatile.Read(ref AnchorFrames) + FramesPlayed);
 
-    public long MsToFrames(long ms) => (long)Math.Round(ms * _positionRate / 1000.0);
+    public long MsToFrames(long ms) => (long)Math.Round(ms * _positionRate / (1000.0 * PlaybackRate));
 
     public long FramesToMs(long frames)
-        => _positionRate > 0 ? (long)Math.Round(frames * 1000.0 / _positionRate) : 0;
+        => _positionRate > 0 ? (long)Math.Round(frames * 1000.0 * PlaybackRate / _positionRate) : 0;
 
     // ─────────────── 解码线程 ───────────────
 
@@ -313,6 +319,7 @@ internal sealed class Session : IRenderSource, IDisposable
             {
                 bool ok = _pcm?.SeekToMs(ms) ?? _dsd?.SeekToMs(ms) ?? _eac3?.SeekToMs(ms) ?? false;
                 if (!ok) throw new IOException("Seek failed.");
+                _tempo?.Reset();
                 Volatile.Write(ref CompletedSeekId, _pendingSeekId);
                 _dsdLeftoverBytes = 0;
             }
@@ -349,7 +356,7 @@ internal sealed class Session : IRenderSource, IDisposable
             while (!_cancelled)
             {
                 HandleSeek();
-                int frames = _pcm!.Read(_decodeScratchF);
+                int frames = _tempo?.Read(_pcm!, _decodeScratchF) ?? _pcm!.Read(_decodeScratchF);
                 if (frames <= 0)
                 {
                     if (!_pcmRing!.MarkInputEnded(_decodeEpoch)) continue;
@@ -498,10 +505,21 @@ internal sealed class Session : IRenderSource, IDisposable
     public void FillIec61937(Span<byte> buffer, int frames) => _iecRing?.Render(buffer, frames);
 
     public void FillPcm(Span<double> buffer, int frames)
+        => RenderPcm(buffer, frames);
+
+    internal void ContinueDspFrom(Session previous)
     {
-        if (_pcmRing == null || Gain == null) { buffer[..(frames * _channels)].Clear(); return; }
+        if (!Volatile.Read(ref _dspEnabled) || !Volatile.Read(ref previous._dspEnabled)) return;
+        Eq.ContinueFrom(previous.Eq);
+        if (Effects != null && previous.Effects != null) Effects.ContinueFrom(previous.Effects);
+        _renderDspResetVersion = Volatile.Read(ref _dspResetVersion);
+    }
+
+    internal int RenderPcm(Span<double> buffer, int frames)
+    {
+        if (_pcmRing == null || Gain == null) { buffer[..(frames * _channels)].Clear(); return 0; }
         int audible = _pcmRing.Render(buffer, frames);
-        if (audible <= 0) return; // 预缓冲/欠载静音段：不推进 EQ 与增益斜坡（淡入淡出按出声时长走）
+        if (audible <= 0) return 0; // 预缓冲/欠载静音段：不推进 EQ 与增益斜坡
         if (Volatile.Read(ref _dspEnabled))
         {
             int resetVersion = Volatile.Read(ref _dspResetVersion);
@@ -515,8 +533,10 @@ internal sealed class Session : IRenderSource, IDisposable
             Eq.Process(buffer, audible, _channels);
             Effects?.ApplyConvolution(buffer, audible);
             Effects?.ApplyStereo(buffer, audible);
+            Effects?.ApplyDynamics(buffer, audible);
         }
         Gain.Apply(buffer, audible, _channels);
+        return audible;
     }
 
     public void FillDop(Span<uint> buffer, int frames)

@@ -66,12 +66,12 @@ dotnet run --project _tools/PlaybackSwitchRegression -- --test-atmos-file "track
 
 ## 进度与逐字歌词
 
-UI 的进度轮询不再发 `GetTimeProgress` 请求。播放子进程每 50 ms 在独立
-`AudioPlayer_Progress_v1` 共享内存发布最新快照：版本、时间线代次、当前位置、总长、
+UI 的进度轮询不再发 `GetTimeProgress` 请求。播放子进程每 50 ms 经
+`OriginalSound_Audio_State_v2` 管道推送最新快照：版本、时间线代次、当前位置、总长、
 Stopwatch 时间戳、播放状态及已处理 seek ID。发布线程只尝试获取引擎控制锁，设备重建
 忙时跳过；不在实时音频回调中分配内存、等待或写入 IPC。旧请求接口保留给诊断工具。
 
-共享内存使用单写者版本校验，读者有界重试，不排队、不等待响应。UI 每 50 ms 读取，
+管道后台读者校验完整帧并更新本地缓存；发送端合并尚未发送的旧快照。UI 每 50 ms 读取缓存，不等待 IPC，
 进度条和逐字歌词使用同一个 PlaybackTimeline；歌词不再对离散 UI 事件独立累加并硬校准。
 同代次只前进，最多外推 100 ms；设备停滞时停止推算，避免歌词无限超前。换曲/seek
 更新代次允许真正的后退，连续 seek 的旧确认不能覆盖最新目标。停止/暂停冻结时钟。

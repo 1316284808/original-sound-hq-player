@@ -1645,7 +1645,7 @@
     <value>免责声明</value>
   </data>
   <data name="ClearCoverCacheButton.Content" xml:space="preserve">
-    <value>清空缓存</value>
+    <value>清理封面缓存</value>
   </data>
   <data name="AreUSureClearCoverCache" xml:space="preserve">
     <value>确定清空封面缓存吗？</value>
@@ -1759,7 +1759,7 @@
     <value>DSP 总开关</value>
   </data>
   <data name="DspMasterDescription" xml:space="preserve">
-    <value>关闭后直接旁路均一化、前置衰减、EQ 和声道效果，并保留各项设置。</value>
+    <value>关闭后旁路倍速、压限及其他 PCM 音效，并保留设置。无缝播放独立控制。</value>
   </data>
   <data name="DspMasterBypass" xml:space="preserve">
     <value>DSP 总开关已关闭：所有音效已旁路，设置已保留。可在「设置 → 音效」重新开启。</value>
@@ -2171,7 +2171,7 @@
     <value>只缓存播放的原始音频，达到限额后自动清理旧缓存。关闭开关停止补全，已有完整缓存仍可播放。</value>
   </data>
   <data name="WebDavClearCacheButton.Content" xml:space="preserve">
-    <value>清理缓存</value>
+    <value>清理播放缓存</value>
   </data>
   <data name="MusicSources.Text" xml:space="preserve"><value>音乐来源</value></data>
   <data name="WebDavPauseMenu.Text" xml:space="preserve"><value>暂停扫描</value></data>
@@ -2268,5 +2268,42 @@ SHA-256：{5}
   </data>
   <data name="WebDavCachedAudio" xml:space="preserve">
     <value>WebDAV · 音频已缓存</value>
+  </data>
+  <data name="GaplessPlayback" xml:space="preserve">
+    <value>无缝播放</value>
+  </data>
+  <data name="GaplessPlaybackDescription" xml:space="preserve">
+    <value>提前载入下一曲，无停顿衔接兼容格式的本地 PCM 音频；不交叉淡化。位流、网络和格式变化使用普通切歌。</value>
+  </data>
+  <data name="DspPlaybackRate" xml:space="preserve">
+    <value>播放倍速</value>
+  </data>
+  <data name="DspPlaybackRateDescription" xml:space="preserve">
+    <value>0.25–5 倍，保留音调。修改时从当前进度重新缓冲；1 倍保持原始采样。 不支持定位的网络流固定使用 1 倍。</value>
+  </data>
+  <data name="DspCompressor" xml:space="preserve">
+    <value>压限器</value>
+  </data>
+  <data name="DspCompressorDescription" xml:space="preserve">
+    <value>压低响亮段落，通过补偿增益抬升安静段落。声道联动，输出采样峰值限制为 −1 dBFS。</value>
+  </data>
+  <data name="DspCompressorThreshold" xml:space="preserve">
+    <value>压缩阈值（dBFS）</value>
+  </data>
+  <data name="DspCompressorRatio" xml:space="preserve">
+    <value>压缩比（:1）</value>
+  </data>
+  <data name="DspCompressorMakeup" xml:space="preserve">
+    <value>补偿增益（dB）</value>
+  </data>
+  <data name="WindowBackgroundTitle" xml:space="preserve"><value>主窗口图片背景</value></data>
+  <data name="WindowBackgroundImage" xml:space="preserve"><value>背景图片</value></data>
+  <data name="WindowBackgroundDescription" xml:space="preserve"><value>选择本地图片作为主窗口背景；清除后恢复原有窗口材质。</value></data>
+  <data name="WindowBackgroundChoose" xml:space="preserve"><value>选择图片</value></data>
+  <data name="WindowBackgroundClear" xml:space="preserve"><value>清除图片</value></data>
+  <data name="WindowBackgroundBlur" xml:space="preserve"><value>模糊程度</value></data>
+  <data name="WindowBackgroundLoadError" xml:space="preserve"><value>无法加载背景图片，请重新选择可访问的 JPG、PNG、BMP 或 WebP 图片。</value></data>
+  <data name="CacheCleanupCard.Header" xml:space="preserve">
+    <value>清理缓存</value>
   </data>
 </root>

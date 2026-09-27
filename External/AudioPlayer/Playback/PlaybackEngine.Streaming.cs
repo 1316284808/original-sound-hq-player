@@ -147,13 +147,14 @@ public sealed partial class PlaybackEngine
     {
         int dsdRate = DsdPcmFreq, dsdGain = DsdGain, latency = Latency;
         RenderKind kind = StreamingKind(slot.Source);
+        double playbackRate = EffectivePlaybackRate;
         slot.Work = Task.Run(async () =>
         {
             Session? prepared = null;
             try
             {
                 prepared = Session.Open(this, slot.Source.Location, kind, dsdRate, dsdGain, latency,
-                    maxChannels: 2, source: slot.Source, cancellationToken: slot.Cancel.Token);
+                    maxChannels: 2, source: slot.Source, cancellationToken: slot.Cancel.Token, playbackRate: playbackRate);
                 if (prepared is null) throw new IOException("OpenFailed");
                 slot.Cancel.Token.ThrowIfCancellationRequested();
                 if (slot.ResumePosition > 0)
@@ -278,6 +279,7 @@ public sealed partial class PlaybackEngine
             Phase = phase, WantsPlay = slot.WantsPlay, CanSeek = session?.CanSeek ?? slot.Source.CanSeek,
             PositionMs = _currentStream == slot.Id ? GetTimeProgress().Item1 : session?.CurrentMs ?? slot.ResumePosition,
             DurationMs = session is { TotalMs: > 0 } ? session.TotalMs : null,
+            PlaybackRate = session?.PlaybackRate ?? 1,
             BufferedMs = session is null ? 0 : session.FramesToMs(session.ReadyFrames),
             SeekId = session is null ? 0 : Volatile.Read(ref session.CompletedSeekId), Error = slot.Error
         };

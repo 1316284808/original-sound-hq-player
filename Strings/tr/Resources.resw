@@ -1646,7 +1646,7 @@
     <value>Yasal uyarı</value>
   </data>
   <data name="ClearCoverCacheButton.Content" xml:space="preserve">
-    <value>Önbelleği temizle</value>
+    <value>Kapak önbelleğini temizle</value>
   </data>
   <data name="AreUSureClearCoverCache" xml:space="preserve">
     <value>Kapak önbelleği temizlensin mi?</value>
@@ -1760,7 +1760,7 @@
     <value>DSP'yi etkinleştir</value>
   </data>
   <data name="DspMasterDescription" xml:space="preserve">
-    <value>Kapalı olduğunda normalizasyon, ön yükseltme zayıflatması, EQ ve kanal efektleri atlanır; ayarları korunur.</value>
+    <value>Ayarları koruyarak hız, dinamik ve diğer PCM efektlerini atlar. Kesintisiz çalma ayrı olarak denetlenir.</value>
   </data>
   <data name="DspMasterBypass" xml:space="preserve">
     <value>DSP kapalı: tüm efektler atlanır ve ayarları korunur. Ayarlar → Ses efektleri bölümünden etkinleştirin.</value>
@@ -2172,7 +2172,7 @@
     <value>Çalınan özgün sesi önbelleğe alır. Sınıra ulaşıldığında eski girdiler çıkarılır. Bunu kapatmak doldurmayı durdurur; tamamen önbelleğe alınmış parçalar çalınmaya devam eder.</value>
   </data>
   <data name="WebDavClearCacheButton.Content" xml:space="preserve">
-    <value>Önbelleği temizle</value>
+    <value>Oynatma önbelleğini temizle</value>
   </data>
   <data name="MusicSources.Text" xml:space="preserve"><value>Müzik kaynakları</value></data>
   <data name="WebDavPauseMenu.Text" xml:space="preserve"><value>Taramayı duraklat</value></data>
@@ -2269,5 +2269,42 @@ SHA-256: {5}
   </data>
   <data name="WebDavCachedAudio" xml:space="preserve">
     <value>WebDAV · Ses önbelleğe alındı</value>
+  </data>
+  <data name="GaplessPlayback" xml:space="preserve">
+    <value>Kesintisiz çalma</value>
+  </data>
+  <data name="GaplessPlaybackDescription" xml:space="preserve">
+    <value>Uyumlu yerel PCM parçalarını çapraz geçiş olmadan kesintisiz çalmak için önceden yükler. Bit akışları, ağ kaynakları ve biçim değişiklikleri normal geçiş kullanır.</value>
+  </data>
+  <data name="DspPlaybackRate" xml:space="preserve">
+    <value>Çalma hızı</value>
+  </data>
+  <data name="DspPlaybackRateDescription" xml:space="preserve">
+    <value>Perdeyi koruyarak 0,25–5×. Değişiklikler mevcut konumdan yeniden arabelleğe alınır; 1× özgün örnekleri korur. Sarma desteklemeyen ağ akışları 1× hızında kalır.</value>
+  </data>
+  <data name="DspCompressor" xml:space="preserve">
+    <value>Kompresör / sınırlayıcı</value>
+  </data>
+  <data name="DspCompressorDescription" xml:space="preserve">
+    <value>Yüksek sesli bölümleri kısar ve telafi kazancıyla sessiz bölümleri yükseltir. Kanallar bağlantılıdır; örnek tepe noktaları −1 dBFS ile sınırlıdır.</value>
+  </data>
+  <data name="DspCompressorThreshold" xml:space="preserve">
+    <value>Eşik (dBFS)</value>
+  </data>
+  <data name="DspCompressorRatio" xml:space="preserve">
+    <value>Oran (:1)</value>
+  </data>
+  <data name="DspCompressorMakeup" xml:space="preserve">
+    <value>Telafi kazancı (dB)</value>
+  </data>
+  <data name="WindowBackgroundTitle" xml:space="preserve"><value>Ana pencere arka plan resmi</value></data>
+  <data name="WindowBackgroundImage" xml:space="preserve"><value>Arka plan resmi</value></data>
+  <data name="WindowBackgroundDescription" xml:space="preserve"><value>Ana pencere için yerel bir resim seçin. Pencere malzemesini geri yüklemek için resmi temizleyin.</value></data>
+  <data name="WindowBackgroundChoose" xml:space="preserve"><value>Resim seç</value></data>
+  <data name="WindowBackgroundClear" xml:space="preserve"><value>Resmi temizle</value></data>
+  <data name="WindowBackgroundBlur" xml:space="preserve"><value>Bulanıklık</value></data>
+  <data name="WindowBackgroundLoadError" xml:space="preserve"><value>Arka plan resmi yüklenemiyor. Erişilebilir bir JPG, PNG, BMP veya WebP resmi seçin.</value></data>
+  <data name="CacheCleanupCard.Header" xml:space="preserve">
+    <value>Önbelleği temizle</value>
   </data>
 </root>

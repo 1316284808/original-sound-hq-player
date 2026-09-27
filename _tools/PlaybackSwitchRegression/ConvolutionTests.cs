@@ -90,7 +90,7 @@ internal static unsafe partial class Program
         {
             var settings = new DspSettings { ConvolutionEnabled = true, ImpulsePath = @"C:\校正\headphone.wav", ConvolutionTrimDb = -9.5 };
             byte[] payload = new byte[DspProtocol.SettingsSize];
-            Require(payload.Length + IpcConstants.EnvelopeHeaderSize <= IpcConstants.MaxRequestSize, "IPC payload too large");
+            Require(payload.Length <= IpcConstants.MaxRequestSize, "IPC payload too large");
             DspProtocol.WriteSettings(payload, settings);
             Require(DspProtocol.ReadSettings(payload) == settings, "IR settings lost in IPC");
             var state = new DspState(0, false, 2, LoudnessStatus.Off, 0, 0, true, ConvolutionStatus.Failed);

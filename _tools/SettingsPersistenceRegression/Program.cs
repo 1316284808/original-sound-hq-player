@@ -26,6 +26,13 @@ try
          "AppTheme":"Dark","AppWidth":1450,"DefualtEntry":"song","PlayOrPauseShortcut":["Ctrl","P"]}
         """;
     var defaults = JsonSerializer.Deserialize("{}", SettingsJsonContext.Default.SaveSettings)!;
+    Check(defaults.WindowBackgroundImagePath == string.Empty && defaults.WindowBackgroundBlurAmount == 20,
+        "Old settings must keep the original backdrop without an image.");
+    var imageSettings = new SaveSettings { WindowBackgroundImagePath = @"C:\Pictures\背景.png", WindowBackgroundBlurAmount = 37 };
+    var imageRoundTrip = JsonSerializer.Deserialize(JsonSerializer.Serialize(imageSettings, SettingsJsonContext.Default.SaveSettings), SettingsJsonContext.Default.SaveSettings)!;
+    Check(imageRoundTrip.WindowBackgroundImagePath == imageSettings.WindowBackgroundImagePath && imageRoundTrip.WindowBackgroundBlurAmount == 37,
+        "Custom background path and blur must survive restart.");
+    Console.WriteLine("PASS: background compatibility defaults and image/blur persistence.");
     Check(!defaults.IsHoverScrollEnabled, "Settings without hover-scroll key must default to hover-scroll disabled.");
     defaults.IsHoverScrollEnabled = true;
     var hoverRoundTrip = JsonSerializer.Deserialize(JsonSerializer.Serialize(defaults, SettingsJsonContext.Default.SaveSettings), SettingsJsonContext.Default.SaveSettings)!;
@@ -39,6 +46,17 @@ try
         && legacy.DsdGain == 12 && legacy.DsdPcmFreq == 176400 && legacy.Dsp.HeadroomDb == -7
         && legacy.Dsp.ConvolutionEnabled && legacy.Dsp.CurvePoints == "20,-4;20000,-4", "Audio migration lost a field.");
     Check(new SaveSettings().ReadLegacyAudioPreferences() == new AudioPreferences(), "Missing legacy keys changed defaults.");
+
+    var playbackStore = new AudioSettingsStore(Path.Combine(directory, "PlaybackEffects.json"));
+    await playbackStore.LoadAsync(new());
+    var playbackPreferences = new AudioPreferences { Dsp = new() { GaplessPlayback = false, PlaybackRate = 1.25,
+        CompressorEnabled = true, CompressorThresholdDb = -22, CompressorRatio = 3.5, CompressorMakeupDb = 8 } };
+    await playbackStore.SaveAsync(playbackPreferences);
+    Check(await new AudioSettingsStore(Path.Combine(directory, "PlaybackEffects.json")).LoadAsync(new()) == playbackPreferences,
+        "Playback effects did not survive restarting the store.");
+    Check(legacy.Dsp.GaplessPlayback && legacy.Dsp.PlaybackRate == 1 && !legacy.Dsp.CompressorEnabled,
+        "Old settings changed speed or enabled compression.");
+    Console.WriteLine("PASS: gapless/speed/compressor settings survive restart; legacy defaults preserved.");
 
     string path = Path.Combine(directory, "AudioSettings.json");
     var store = new AudioSettingsStore(path);

@@ -19,6 +19,8 @@ public sealed class SettingsSnapshotFactory(AppState state)
         newSettings.DefaultEntry = state.Preferences.DefaultEntryComboBoxTag;
         newSettings.DefaultPlayList = state.Preferences.DefaultPlayListComboBoxTag;
         newSettings.AppStyle = state.Preferences.BackdropType;
+        newSettings.WindowBackgroundImagePath = state.Preferences.WindowBackgroundImagePath;
+        newSettings.WindowBackgroundBlurAmount = state.Preferences.WindowBackgroundBlurAmount;
         newSettings.AppTheme = state.Preferences.ThemeType;
         newSettings.IsRunningBackend = state.Preferences.IsRunningBackend;
         newSettings.IsAutoLyricsEnabled = state.Preferences.IsAutoLyricsEnabled;

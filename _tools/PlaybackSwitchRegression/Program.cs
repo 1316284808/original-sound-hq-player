@@ -30,6 +30,18 @@ internal static unsafe partial class Program
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(WasapiOutput))]
     private static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--measure-playback-memory")
+        {
+            FFmpeg.AutoGen.ffmpeg.RootPath = AppContext.BaseDirectory;
+            MeasurePlaybackAllocations();
+            return 0;
+        }
+        if (args.Length == 1 && args[0] == "--test-playback-effects")
+        {
+            FFmpeg.AutoGen.ffmpeg.RootPath = AppContext.BaseDirectory;
+            RunPlaybackEffectsTests();
+            return _failures == 0 ? 0 : 1;
+        }
         if (args.Length == 1 && args[0] is "--test-network-asio" or "--test-nas-dsf")
         {
             FFmpeg.AutoGen.ffmpeg.RootPath = AppContext.BaseDirectory;
@@ -52,10 +64,23 @@ internal static unsafe partial class Program
         }
         if (args.Length == 2 && args[0] == "--progress-writer") return ProgressWriter(args[1]);
         if (args.Length == 1 && args[0] == "--test-progress") { RunProgressTests(); return _failures == 0 ? 0 : 1; }
+        if (args.Length == 1 && args[0] == "--test-pipe")
+        {
+            RunPipeProtocolTests();
+            Run("IPC: ordered coalescing", CheckPipeOrdering);
+            Run("IPC: real cross-process command chain", BenchmarkConfirmedIpc);
+            return _failures == 0 ? 0 : 1;
+        }
         if (args.Length == 2 && args[0] == "--test-export-file")
         {
             FFmpeg.AutoGen.ffmpeg.RootPath = AppContext.BaseDirectory;
             RunExportTests(Path.GetFullPath(args[1]));
+            return _failures == 0 ? 0 : 1;
+        }
+        if (args.Length == 3 && args[0] == "--test-export-edge")
+        {
+            FFmpeg.AutoGen.ffmpeg.RootPath = AppContext.BaseDirectory;
+            RunExportEdgeTests(Path.GetFullPath(args[1]), Path.GetFullPath(args[2]));
             return _failures == 0 ? 0 : 1;
         }
         if (args.Length == 2 && args[0] == "--test-pcm-file")
@@ -87,11 +112,13 @@ internal static unsafe partial class Program
         RunAtmosTests(root);
         RunAtmosAutomaticTests(root);
         RunProgressTests();
+        RunPipeProtocolTests();
         RunWavPackTests();
         RunBufferPolicyTests();
         RunAsioNotificationTests();
         RunEqualizerQTests();
         RunDspTests();
+        RunPlaybackEffectsTests();
         RunConvolutionTests();
         RunDeviceCorrectionTests();
         RunCurveTests();
@@ -262,7 +289,8 @@ internal static unsafe partial class Program
                 Set(output, "_failed", failed ? 1 : 0);
                 Set(engine, "_output", output);
                 Require(Reuse(engine, next) == expected, $"expected reuse={expected}");
-                Require(ReferenceEquals(output.GetType().GetField("_source", Private)!.GetValue(output), expected ? next : old),
+                var attachedSource = output.GetType().GetField("_source", Private)!.GetValue(output);
+                Require(ReferenceEquals(attachedSource is GaplessSource gapless ? gapless.Current : attachedSource, expected ? next : old),
                     "reuse decision replaced the wrong source");
 
                 // The output API must also reject incompatible sources if called without the engine gate.

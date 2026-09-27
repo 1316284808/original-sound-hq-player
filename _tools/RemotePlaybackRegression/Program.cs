@@ -27,7 +27,6 @@ static async Task RunAsync()
     var network2 = new Music(2, 10);
     var local = new Music(3);
     state.CurrentPlayingList = [network, network2, local];
-    state.State.Queue.FindIndex = song => state.CurrentPlayingList.IndexOf(song);
     await using var library = new WebDavLibraryService(new(), transport, cache, NullLogger<WebDavLibraryService>.Instance)
         { Root = origin.Root };
     library.Attach(state);
@@ -36,7 +35,7 @@ static async Task RunAsync()
     var player = new BassPlayerCommandService();
     var lifecycle = new AppLifecycle();
     using var coordinator = new PlaybackCoordinator(state, player, statistics, new(lifecycle),
-        new(lifecycle, NullLogger<ShutdownCoordinator>.Instance), NullLogger<PlaybackCoordinator>.Instance, remote, library);
+        new(lifecycle, NullLogger<ShutdownCoordinator>.Instance), NullLogger<PlaybackCoordinator>.Instance, remote, library, new IpcService());
     int sourceNotifications = 0;
     network.PropertyChanged += (_, change) =>
     {

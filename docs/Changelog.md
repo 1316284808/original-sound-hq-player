@@ -2,6 +2,86 @@
 
 新条目加在最上方。
 
+## 2026-09-27 关于页版权年份改为动态
+
+- `AboutSettingsControl.xaml`、`AboutSettingsControl.xaml.cs`：两处 `© 2026 Sennpei Studio` 硬编码改为 `x:Bind` 函数绑定，运行时取 `DateTime.Now.Year`，跨年无需发版更新。
+
+## 2026-09-27 合并关于页缓存设置并统计缓存总量
+
+- `AboutSettingsControl.xaml`：WebDAV 播放缓存并入同一个“缓存”展开卡片，移除独立控件和重复路径；保留位置、播放缓存开关/上限及两种清理入口。
+- `CacheSizeCalculator.cs`、`WebDavSourcesViewModel.cs`：汇总当前缓存位置的网络封面、封面子目录及 WebDAV 子目录（含未完成下载），按容量显示 B/KiB/MiB/GiB；后台串行统计，换目录丢弃旧结果，清理后刷新。
+- `Strings/*/Resources.resw`：七种语言区分封面与播放缓存清理按钮；用户原始音乐文件不计入，已有清理范围保持不变。
+- 验证：x64 构建、缓存计数/目录切换/清理刷新/退出回归及七种语言资源键静态检查通过。
+
+## 2026-09-27 修复封面缓存失败时丢失可用封面
+
+- `ImageSwitcher.xaml.cs`、`ImageHelper.cs`：展示缓存生成或解码失败时直接读取原图，按 EXIF 方向限制最长边 1536px，取消不触发兜底。
+- `CoverPresentationService.cs`、`SystemMediaControlsService.cs`：展示缓存失败保留原图，文件不可用时使用已取得的封面字节；正常热缓存仍只传路径，兜底沿用切歌取消与退出屏障。
+- `_tools/SmtcCoverRegression`、`_tools/SmtcCoverUiRegression`：增加缓存发布/替换失败、原图写入及打开失败、限尺寸解码、字节兜底、取消与退出回归。
+- 验证：主项目 x64 构建、真实 WIC/SMTC 与 WinUI 控件/展示管线回归通过；未进行完整播放器及系统媒体面板的人工视觉验证。
+
+## 2026-09-27 SMTC 与详情页共享高分辨率封面
+
+- `PlaybackCoverImage.cs`、`ImageSwitcher.xaml.cs`、`ImageHelper.cs`：详情页与 SMTC 共用高分辨率封面文件，大图按比例限制最长边 1536px，小图不放大；串行生成并原子发布缓存，直接从文件流解码。
+- `CoverPresentationService.cs`、`SystemMediaControlsService.cs`、`ReadOnlyMappedStream.cs`：热缓存避免读取原图大数组；SMTC 克隆共享文件页，UI 队列只保留路径，清空缓存不破坏在途读取，退出等待全部更新并释放流。
+- `ToolUtils.cs`、`WebDavLibraryService.cs`：高分辨率缓存纳入启动保留、远程容量裁剪和清理。
+- 验证：真实 WIC/SMTC 与 ImageSwitcher 回归通过，覆盖 JPEG 方向、PNG 透明度、取消、快速切歌、删除缓存和退出；1536px 噪声测试图热提交的托管分配约 7.42MB → 40KB/次，10 次文件流提交无 GC，仅代表此路径；完整系统媒体面板外观与整机 GC 停顿未测。
+
+## 2026-09-27 修复 1.2.9.0 以来审查问题并优化无缝预载
+
+- `PlaybackEngine.Gapless.cs`、`GaplessPreloader.cs`：按剩余实际播放时间 10 秒延迟创建待播会话，未知时长提前准备；单个工作任务合并过期计划，统一迟到会话与退出清理，PCM 环容量不变。
+- `PlaybackEngine.cs`：普通 DSP、设备校正及试听更新当前与待播会话，避免重复销毁/解码/分配；倍速、seek、暂停、输出重建及关闭无缝仍使准备失效。
+- `PlaybackQueueState.cs`、`PlaybackCoordinator.Gapless.cs`、IPC：队列版本缓存候选，已确认计划不轮询重发；提交失败退避，取消回执确认曲目身份后再替换，保护手动选曲及迟到通知。
+- `FFmpegAudioConverter.cs`：重采样器重建失败释放新原生上下文；`WebDavRegression.csproj` 改用完整共享 IPC 项目，修复回归工具缺失依赖。
+- `TempoProcessor.cs`：明确输入帧、输出帧及搜索窗口命名；`Player/AudioPlayer.exe` 同步 NativeAOT 产物，存量偏好保持不变。
+- 验证：317/317 播放回归、导航/远程/WebDAV TLS 回归、真实 WinUI 调度及主程序构建；NativeAOT 在真实 WASAPI 共享输出通过 0.25× / 5× 无缝衔接、暂停恢复与退出。未实测 ASIO/独占硬件及完整主界面交互。
+
+## 2026-09-27 修复展开图片背景设置时闪退
+
+- `GeneralSettingsControl.xaml`：将背景错误 InfoBar 移到 SettingsExpander.Items 外，避免展开时应用 SettingsCard 样式导致 COMException；无错误时隐藏提示。
+- `_tools/AppearanceUiRegression`：直接提取生产 XAML，在真实 WinUI/Toolkit 模板中复现原异常并验证展开、反复折叠/展开及错误提示显示/隐藏；主程序构建通过。
+
+## 2026-09-27 主窗口图片背景与倍速默认选择
+
+- `MainWindow.xaml`、`Controls/WindowBackgroundImage.cs`：新增铺满窗口的自定义图片背景与 0–100 模糊；按需读取、限制解码尺寸，换图/清除/退出释放合成资源，缺失或损坏图片回退原窗口材质，高对比度下隐藏图片。
+- `GeneralSettingsControl.xaml`、`AppViewModel.WindowBackground.cs`、设置状态/保存链路、`Strings/*`：常规设置新增选择/清除图片和模糊滑块/数值输入；保存路径与模糊值，旧设置保持原背景，默认模糊 20；补齐七种语言独立资源键。
+- `DspSettingsViewModel.Playback.cs`：绑定初始化直接读取已保存倍速，恢复偏好期间忽略临时选择写回；无设置时默认选中 1×，保留已有档位和旧自定义倍速。
+- 验证：主程序构建、真实 WinUI 倍速绑定/图片合成与生命周期回归、设置持久化及七种语言资源检查；完整设置页、图片选择对话框与系统高对比度切换未做人工验证。
+
+## 2026-09-27 固定倍速档位
+
+- `DspSettingsControl.xaml`、`DspSettingsViewModel.Playback.cs`：倍速改为不可编辑下拉框，提供 0.25、0.5、0.75、1、1.5、2、3、4、5×；避免显示浮点尾数，旧自定义倍速保留至用户重新选择。
+- `DspSettings.cs`、`PlaybackSnapshots.cs`、`RemotePlaybackService.cs`、`TempoProcessor.cs`：播放与遥测范围扩展为 0.25–5×，调整分析缓冲容量；同步七种语言说明及播放端产物。
+- 验证：主程序与 NativeAOT 构建通过；九档真实解码时长、音调和 seek 重置通过；0.25× / 5× 的真实 WASAPI 无缝切歌、暂停恢复通过，七种语言取词键静态检查通过。设置页外观未做人工验证。
+
+## 2026-09-27 无缝播放、保调倍速与动态压限
+
+- `External/AudioPlayer/Playback`：预载下一首兼容本地 PCM，在同一输出回调内无停顿衔接；取消、暂停、seek、格式回退与退出保留明确的会话所有权。
+- `Services/PlaybackCoordinator.Gapless.cs`、IPC：按真实队列及循环模式预载，带身份的切歌通知/进度同步曲目、歌词和统计；取消确认处理已经开始的切歌，手动选曲优先。
+- `TempoProcessor.cs`、`DynamicsProcessor.cs`：加入 0.5–2× 保调倍速、声道联动软拐点压缩、补偿增益及 −1 dBFS 采样峰值限幅；进度与网络遥测按原曲时间计量。
+- `DspSettingsViewModel`、`DspSettingsControl.xaml`、`Strings/*`：新增设置并保存偏好，补齐七种语言的独立资源键；旧配置默认 1×、压限关闭、无缝开启。不能 seek 的网络流与位流不启用倍速。
+- `Player/AudioPlayer.exe`、共享协议：NativeAOT 产物同步更新；管道握手 v3，主程序与播放端须一同部署，DSP 设置兼容旧版本。
+- 验证：313 项播放回归通过，另通过偏好持久化、远程恢复、真实 WinUI 调度及 NativeAOT + WASAPI 共享输出测试；九个新增取词键覆盖七种语言。尚未实测 ASIO/独占硬件及设置页视觉布局。
+
+## 2026-09-27 AudioPlayer IPC 统一为持久 Named Pipe
+
+- `External/BassPlayerIpc.Shared`：移除命令、进度、DSP 和设备校正的 MMF/信号量实现；统一版本化分帧、实例握手、有序确认、有界队列与取消/迟到响应的缓冲所有权。
+- `External/AudioPlayer/PlayerIpcService.cs`、`StreamingServer.cs`、`Services/IpcService.cs`：常规命令与流媒体控制独立执行，进度/DSP 推送到本地缓存；关键通知保序，断开及退出等待在途 I/O 后释放资源。
+- `External/BassPlayerIpc.Shared/Streaming.cs`、`Services/RemotePlaybackService.cs`：流媒体控制复用持久连接，分离状态查询、准备、seek/refresh 与播放控制；会话停止时关闭连接，不自动重放失败命令。
+- `Player/AudioPlayer.exe`、播放端说明文档：更新 NativeAOT 分发产物；主程序与播放端必须同时更新，不兼容旧 MMF 传输，存量音频设置保持原格式。
+- `_tools/PlaybackSwitchRegression`、`AudioPlayerSmokeTest`、`RemotePlaybackRegression`：迁移 IPC 用例并覆盖分帧、超时/取消、队列背压、跨进程快照与断开退出；305 项播放回归、远程恢复回归、真实 NativeAOT HTTP/DSF 集成及 WASAPI 共享输出冒烟通过。未执行 WinUI 交互、ASIO/独占硬件验证。
+
+## 2026-09-26 旋转网格背景模糊随窗口尺寸缩放
+
+- `External/AnimatedWin2dControls/AnimatedWin2dControls/Renderer/Background/RotatingMeshBackgroundRenderer.cs`：模糊半径按画布面积的平方根（几何平均边长）同比缩放，以 1920×1080 时的原有效果为基准，避免小窗口过度模糊；横竖屏同面积下模糊强度一致，按宽度缩放会导致竖屏相对失准。裁切、网格和其他渲染参数保持不变。
+
+## 2026-09-26 修复 OpenList 网盘歌曲误报变化及保存来源卡顿
+
+- `Services/WebDav/WebDavTransport.cs`、`RemoteResourceVersion.cs`、`HttpRangeReadStream.cs`、`RemoteReadSession.cs`：区分 DAV 目录与重定向下载资源的版本，修复播放、标签及封面读取误报“远程文件已变化”；在同一读取中继续校验下载 ETag、修改时间和长度，缺 ETag 不再误判 Range 不支持。
+- `Services/WebDav/RemoteReadSession.cs`：下载版本无法对应目录强版本时停止自动缓存补全且不发布音频磁盘缓存，保留有界内存播放及定位，避免把直链数据错误归入目录版本缓存。
+- `Services/WebDavLibraryService.Sources.cs`、`WebDavLibraryService.cs`：凭据和数据库保存移到后台；新增来源由扫描批次发布曲目，省去保存时整库刷新；通知回到 UI 线程，退出等待在途保存且抑制迟到通知。
+- `_tools/WebDavRegression`、`_tools/WebDavSaveUiRegression`：增加重定向版本/长度/Range 回归及真实 WinUI 凭据保存、UI 心跳、失败和退出收尾验证；真实 OpenList 目录 77 首元信息全部通过，抽样验证标签、封面、音频字节及实际 AudioPlayer 解码和定位。
+
 ## 2026-09-25 播放进度条右侧改显剩余时间
 
 - `Services/PlaybackProgressService.cs`：滑块右侧文本由总时长改为剩余时间（总时长 − 当前进度，倒数归零），`curMs` 越过 `totalMs` 时钳到 0；SMTC 时间线仍上报总时长。

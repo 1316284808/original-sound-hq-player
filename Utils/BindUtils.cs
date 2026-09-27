@@ -18,6 +18,9 @@ namespace WinUIMusicPlayer.Utils
 {
     public static class BindUtils
     {
+        public static bool IsNotEmptyString(string? value) => !string.IsNullOrWhiteSpace(value);
+        public static Visibility StringToVisibilityConverter(string? value)
+            => IsNotEmptyString(value) ? Visibility.Visible : Visibility.Collapsed;
         /// <summary>列表来源标识只依赖曲目状态，不在可视项绑定中读取数据库或启动网络请求。</summary>
         public static string MusicSourceGlyph(bool isRemote) => isRemote ? "\uE753" : "\uE8B7";
         public static string MusicSourceGlyph(bool isRemote, bool isOffline)

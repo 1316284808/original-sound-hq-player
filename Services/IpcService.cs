@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.IO.MemoryMappedFiles;
 using System.Threading;
 using System.Threading.Tasks;
 using WinUIMusicPlayer.Model;
@@ -14,17 +13,15 @@ namespace WinUIMusicPlayer.Services
 {
     public partial class IpcService : IDisposable
     {
-        private static readonly long MmfSize = IpcConstants.MmfSize;
-
-        private DspStateMailbox? _dspMailbox;
-        private DeviceCorrectionMailbox? _correctionMailbox;
-        private ProgressMailbox? _progressMailbox;
+        private readonly object _lifecycleGate = new();
+        private readonly CancellationTokenSource _connectionStop = new();
+        private Task? _initializationTask;
+        private PipeStateClient? _stateClient;
         private long _nextSeekId;
         private long _progressSequence;
         private Func<ProgressSnapshot?>? _remoteProgress;
         public void AttachRemoteProgress(Func<ProgressSnapshot?> source) => _remoteProgress = source;
         private readonly object _seekPublishGate = new();
-        private Task? _dspListenerTask;
         private DspStateSnapshot? _dspSnapshot;
 
         /// <summary>连接内最新完整 DSP 状态；不可变快照可跨线程读取。</summary>
@@ -32,41 +29,29 @@ namespace WinUIMusicPlayer.Services
         /// <summary>在监听线程触发；UI 订阅者必须调度到 DispatcherQueue。</summary>
         public event Action? DspStateChanged;
 
-        private MemoryMappedFile? _mmf;
-        private MemoryMappedViewAccessor? _accessor;
-        private Semaphore? _requestReadySemaphore;
-        private Semaphore? _responseReadySemaphore;
-        private Semaphore? _notificationReadySemaphore;
-
         private readonly Dictionary<int, string> _wasapiEndpoints = new();
         private readonly Dictionary<int, string> _asioEndpoints = new();
         public string? GetAsioEndpointId(int id) => _asioEndpoints.GetValueOrDefault(id);
         /// <summary>获取本次枚举中设备索引对应的稳定端点 ID。</summary>
         public string? GetWasapiEndpointId(int id) => _wasapiEndpoints.GetValueOrDefault(id);
-        private MailboxClient? _transport;
+        private PipeCommandClient? _transport;
         private int _connected;
         private int _disposed;
+        private int _faulted;
 
-        /// <summary>IPC 已连接且监听通道已建立；连接是单向的，断开由服务端监视器整体退出处理。</summary>
+        /// <summary>命令与状态管道属于同一播放进程；断开时按既有策略整体退出。</summary>
         public bool IsConnected => Volatile.Read(ref _connected) == 1;
 
-        private CancellationTokenSource? _notificationCts;
-        private Task? _notificationListenerTask;
-        private CancellationTokenSource? _serverMonitorCts;
-        private Task? _serverMonitorTask;
         private readonly ILogger<IpcService> _logger;
         private readonly LicenseService _license;
         private readonly NotificationService _systemNotifications;
         private bool _lastLicenseRestricted;
         private AppViewModel AppViewModel { get; }
 
-        private int _lastNotificationVersion;
-        private readonly byte[] _notificationBuffer = new byte[IpcConstants.MaxNotificationSize];
-
         /// <summary>
         /// Raised on the notification listener thread when a notification arrives.
-        /// Contract: the <see cref="ReadOnlyMemory{T}"/> payload points into a reused
-        /// zero-allocation buffer and is only valid DURING the handler invocation -
+        /// Contract: the <see cref="ReadOnlyMemory{T}"/> payload points into a
+        /// reused pipe buffer and is only valid DURING the handler invocation -
         /// handlers must copy (or parse synchronously) before returning.
         /// </summary>
         public event Action<MessageTypeId, ReadOnlyMemory<byte>>? NotificationReceived;
@@ -81,50 +66,70 @@ namespace WinUIMusicPlayer.Services
             _license.StateChanged += OnLicenseStateChanged;
         }
 
-        public async Task InitializingAsync()
+        public Task InitializingAsync()
         {
-            for (int i = 0; i < 200; i++)
+            lock (_lifecycleGate)
             {
-                // 退出中（如用户在协议弹窗拒绝）：静默结束重试，不触发失败退出路径。
-                if (Volatile.Read(ref _disposed) != 0) return;
-                try
+                if (_disposed != 0) return Task.CompletedTask;
+                return _initializationTask ??= ConnectAsync();
+            }
+        }
+
+        private async Task ConnectAsync()
+        {
+            PipeCommandClient? commands = null;
+            PipeStateClient? state = null;
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_connectionStop.Token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(20));
+            try
+            {
+                commands = await PipeCommandClient.ConnectAsync(IpcConstants.ControlPipeName, timeout.Token).ConfigureAwait(false);
+                state = await PipeStateClient.ConnectAsync(IpcConstants.StatePipeName, timeout.Token).ConfigureAwait(false);
+                if (commands.InstanceId != state.InstanceId) throw new InvalidOperationException("Audio pipe instance mismatch.");
+                lock (_lifecycleGate)
                 {
-                    _mmf = MemoryMappedFile.OpenExisting(IpcConstants.MmfName);
-                    _accessor = _mmf.CreateViewAccessor(0, MmfSize);
-                    _requestReadySemaphore = Semaphore.OpenExisting(IpcConstants.RequestSemaphoreName);
-                    _responseReadySemaphore = Semaphore.OpenExisting(IpcConstants.ResponseSemaphoreName);
-                    _notificationReadySemaphore = Semaphore.OpenExisting(IpcConstants.NotificationSemaphoreName);
-                    _transport = new MailboxClient(_accessor, _requestReadySemaphore, _responseReadySemaphore);
-                    _transport.CommandFailed += command => _logger.LogWarning("Audio command {Command} was rejected", command);
-                    _transport.Faulted += exception => _logger.LogError(exception, "Audio IPC transport stopped");
-                    _dspMailbox = new DspStateMailbox(create: false);
-                    _progressMailbox = new ProgressMailbox(create: false);
-                    StartNotificationListener();
-                    _dspListenerTask = Task.Factory.StartNew(() => ListenForDspState(_notificationCts!.Token),
-                        CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-                    StartServerMonitor();
+                    if (_disposed != 0) return;
+                    _transport = commands;
+                    _stateClient = state;
+                    commands.CommandFailed += OnCommandFailed;
+                    commands.Faulted += OnTransportFault;
+                    state.Faulted += OnTransportFault;
+                    state.DspStateChanged += OnDspState;
+                    state.NotificationReceived += OnNotification;
                     Volatile.Write(ref _connected, 1);
-                    return;
-                }
-                catch
-                {
-                    _dspMailbox?.Dispose(); _dspMailbox = null;
-                    _progressMailbox?.Dispose(); _progressMailbox = null;
-                    _transport?.Dispose(); _transport = null;
-                    _accessor?.Dispose(); _accessor = null;
-                    _mmf?.Dispose(); _mmf = null;
-                    _requestReadySemaphore?.Dispose(); _requestReadySemaphore = null;
-                    _responseReadySemaphore?.Dispose(); _responseReadySemaphore = null;
-                    _notificationReadySemaphore?.Dispose(); _notificationReadySemaphore = null;
-                    await Task.Delay(100);
+                    state.Start();
+                    commands = null;
+                    state = null;
                 }
             }
-            _logger.LogCritical("IPC connection failed after retries - core process unavailable, exiting.");
-            // 并行音乐库扫描可能尚未结束，保留即时退出，不能等 Task.WhenAll 收齐才退出。
-            ShutdownApp();
-            // 启动失败必须传播给 Host，不能返回成功后继续恢复播放和启用主界面。
-            throw new InvalidOperationException("Audio IPC connection failed after retries.");
+            catch (OperationCanceledException) when (_connectionStop.IsCancellationRequested) { }
+            catch (Exception ex)
+            {
+                _logger.LogCritical(ex, "Audio pipe connection failed; exiting.");
+                QueueShutdown();
+                throw;
+            }
+            finally
+            {
+                if (state is not null) await state.DisposeAsync().ConfigureAwait(false);
+                if (commands is not null) await commands.DisposeAsync().ConfigureAwait(false);
+            }
         }
+
+        private void OnCommandFailed(CommandId command) => _logger.LogWarning("Audio command {Command} was rejected", command);
+
+        private void OnTransportFault(Exception exception)
+        {
+            if (Volatile.Read(ref _disposed) != 0 || Interlocked.Exchange(ref _faulted, 1) != 0) return;
+            Volatile.Write(ref _connected, 0);
+            Volatile.Write(ref _dspSnapshot, null);
+            _logger.LogError(exception, "Audio pipe disconnected; exiting.");
+            NotifyDspStateChanged();
+            QueueShutdown();
+        }
+
+        private static void QueueShutdown()
+            => ThreadPool.QueueUserWorkItem(static _ => ShutdownApp());
 
         public async Task InitializeMusic(Music? music)
         {
@@ -164,96 +169,27 @@ namespace WinUIMusicPlayer.Services
             }
         }
 
-        private void ListenForDspState(CancellationToken cancellationToken)
+        private void OnDspState(DspStateSnapshot snapshot)
         {
-            WaitHandle[] waits = [cancellationToken.WaitHandle, _dspMailbox!.Changed];
+            if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _faulted) != 0 || snapshot.Revision <= (CurrentDspState?.Revision ?? 0)) return;
+            var previous = CurrentDspState?.State;
+            Volatile.Write(ref _dspSnapshot, snapshot);
             try
             {
-                // Read before waiting: the initial publication may precede this connection.
-                do
-                {
-                    if (cancellationToken.IsCancellationRequested) return;
-                    var snapshot = _dspMailbox.Read();
-                    if (snapshot != null && snapshot.Revision > (CurrentDspState?.Revision ?? 0))
-                    {
-                        var previous = CurrentDspState?.State;
-                        Volatile.Write(ref _dspSnapshot, snapshot);
-                        SynchronizeCorrectionOutput(previous, snapshot.State);
-                        SynchronizeAtmosState(snapshot);
-                        NotifyDspStateChanged();
-                    }
-                } while (WaitHandle.WaitAny(waits) != 0);
+                SynchronizeCorrectionOutput(previous, snapshot.State);
+                SynchronizeAtmosState(snapshot);
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "DSP state channel failed");
-                Volatile.Write(ref _dspSnapshot, null);
-                NotifyDspStateChanged();
-            }
+            catch (Exception ex) { _logger.LogWarning(ex, "DSP state synchronization failed"); }
+            NotifyDspStateChanged();
         }
 
-        private void StartNotificationListener()
+        private void OnNotification(MessageTypeId type, ReadOnlyMemory<byte> payload)
         {
-            _notificationCts = new CancellationTokenSource();
-            _notificationListenerTask = Task.Factory.StartNew(() => ListenForNotifications(_notificationCts.Token),
-                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        }
-
-        /// <summary>
-        /// Watches the core process's single-instance mutex. When the core exits or
-        /// crashes the mutex becomes acquirable; by design either side exiting shuts
-        /// down the whole program, so we trigger a graceful app exit.
-        /// </summary>
-        private void StartServerMonitor()
-        {
-            _serverMonitorCts = new CancellationTokenSource();
-            _serverMonitorTask = Task.Run(() => MonitorServerAliveAsync(_serverMonitorCts.Token));
-        }
-
-        private async Task MonitorServerAliveAsync(CancellationToken cancellationToken)
-        {
-            Mutex? serverMutex = null;
-            for (int i = 0; i < 200 && serverMutex == null; i++)
+            if (Volatile.Read(ref _disposed) != 0 || Volatile.Read(ref _faulted) != 0 || NotificationReceived is not { } handlers) return;
+            foreach (Action<MessageTypeId, ReadOnlyMemory<byte>> handler in handlers.GetInvocationList())
             {
-                try { serverMutex = Mutex.OpenExisting(IpcConstants.MutexName); }
-                catch (WaitHandleCannotBeOpenedException)
-                {
-                    try { await Task.Delay(100, cancellationToken); }
-                    catch (OperationCanceledException) { return; }
-                }
-            }
-            if (serverMutex == null)
-            {
-                _logger.LogWarning("Server alive mutex not found within timeout");
-                return;
-            }
-            try
-            {
-                while (!cancellationToken.IsCancellationRequested)
-                {
-                    try
-                    {
-                        if (serverMutex.WaitOne(0))
-                        {
-                            serverMutex.ReleaseMutex();
-                            _logger.LogWarning("Core process exited; shutting down application.");
-                            ShutdownApp();
-                            break;
-                        }
-                    }
-                    catch (AbandonedMutexException)
-                    {
-                        _logger.LogWarning("Core process crashed; shutting down application.");
-                        ShutdownApp();
-                        break;
-                    }
-                    try { await Task.Delay(200, cancellationToken); }
-                    catch (OperationCanceledException) { break; }
-                }
-            }
-            finally
-            {
-                serverMutex.Dispose();
+                try { handler(type, payload); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Audio notification subscriber failed"); }
             }
         }
 
@@ -268,54 +204,6 @@ namespace WinUIMusicPlayer.Services
             if (window is not null && window.DispatcherQueue.TryEnqueue(() => _ = App.Current_Exit()))
                 return;
             _ = App.Current_Exit();
-        }
-
-        private void ListenForNotifications(CancellationToken cancellationToken)
-        {
-            WaitHandle[] waits = [cancellationToken.WaitHandle, _notificationReadySemaphore!];
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                try
-                {
-                    if (WaitHandle.WaitAny(waits, 1000) == 0) break;
-
-                    int version = IpcEnvelope.ReadVersion(_accessor!, IpcConstants.NotificationVersionOffset);
-                    if (version == _lastNotificationVersion) continue;
-
-                    // Double-buffered: the slot is selected by version parity. The payload
-                    // is only trusted after re-reading the version: if it advanced while we
-                    // read, the slot may have been overwritten (same-parity reuse), so retry
-                    // with the newer version instead of parsing torn data.
-                    long slot = IpcEnvelope.NotificationSlotOffset(version);
-                    var typeId = IpcEnvelope.ReadMessageTypeId(_accessor!, slot);
-                    int payloadLen = IpcEnvelope.ReadPayload(
-                        _accessor!, slot,
-                        _notificationBuffer,
-                        IpcConstants.MaxNotificationSize - IpcConstants.EnvelopeHeaderSize);
-
-                    if (IpcEnvelope.ReadVersion(_accessor!, IpcConstants.NotificationVersionOffset) != version)
-                        continue;
-
-                    _lastNotificationVersion = version;
-
-                    if (payloadLen < 0) continue;
-                    if (payloadLen > 0)
-                    {
-                        var mem = new ReadOnlyMemory<byte>(_notificationBuffer, 0, payloadLen);
-                        NotificationReceived?.Invoke(typeId, mem);
-                    }
-                    else
-                    {
-                        NotificationReceived?.Invoke(typeId, ReadOnlyMemory<byte>.Empty);
-                    }
-                }
-                catch (OperationCanceledException) { break; }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Notification listener error");
-                    if (cancellationToken.WaitHandle.WaitOne(500)) break;
-                }
-            }
         }
 
         // ──────────────── Core send ────────────────
@@ -393,7 +281,7 @@ namespace WinUIMusicPlayer.Services
             Publish(CommandId.UpdateSettings, buf[..len]);
         }
 
-        /// <summary>发布完整绑定集合，再通知播放端原子采用最新集合。</summary>
+        /// <summary>完整绑定集合随有序命令发送，执行确认后才更新已应用快照。</summary>
         private readonly SemaphoreSlim _correctionPublishGate = new(1, 1);
         private DeviceCorrections? _appliedCorrections;
         private readonly CancellationTokenSource _correctionRetryCts = new();
@@ -403,6 +291,7 @@ namespace WinUIMusicPlayer.Services
 
         private void SetCorrectionSyncFailed(bool failed)
         {
+            if (Volatile.Read(ref _disposed) != 0) return;
             if (CorrectionSyncFailed == failed) return;
             CorrectionSyncFailed = failed;
             if (CorrectionSyncChanged is not { } handlers) return;
@@ -440,8 +329,10 @@ namespace WinUIMusicPlayer.Services
                 // 在串行入口内取最新快照，避免排队期间旧配置覆盖新配置。
                 var snapshot = AppSettings.DeviceCorrections;
                 if (!force && ReferenceEquals(snapshot, _appliedCorrections)) return;
-                await Task.Run(() => (_correctionMailbox ??= new DeviceCorrectionMailbox()).Publish(snapshot));
-                var result = await SendCommandAsync(CommandId.UpdateDeviceCorrections, ReadOnlyMemory<byte>.Empty);
+                byte[] payload = await Task.Run(() => DeviceCorrectionProtocol.Write(snapshot));
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+                var result = await SendCommandAsync(CommandId.UpdateDeviceCorrections, payload);
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
                 if (result != MessageTypeId.Success) throw new InvalidOperationException("Audio correction acknowledgement failed.");
                 _appliedCorrections = snapshot;
                 PublishLiveCorrection();
@@ -611,7 +502,7 @@ namespace WinUIMusicPlayer.Services
             snapshot = default;
             var remote = _remoteProgress?.Invoke();
             if (remote is not null) snapshot = remote.Value;
-            else if (_progressMailbox?.TryRead(out snapshot) != true) return false;
+            else if (_stateClient?.TryGetProgress(out snapshot) != true) return false;
             snapshot = snapshot with { Revision = Interlocked.Increment(ref _progressSequence) };
             return true;
         }
@@ -639,6 +530,25 @@ namespace WinUIMusicPlayer.Services
             Span<byte> buf = stackalloc byte[BinarySerializer.ChangeVolumeRequestSize];
             BinarySerializer.WriteChangeVolumeRequest(buf, req);
             Publish(CommandId.ChangeVolume, buf);
+        }
+
+        public async Task<bool> QueueNextAsync(GaplessRequest request)
+        {
+            byte[] reply = new byte[16];
+            var (type, length) = await SendWithResponseAsync(CommandId.QueueNext, request.Write(), reply);
+            return type == MessageTypeId.Success && length == reply.Length
+                && System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(reply.AsSpan(8)) == request.Epoch;
+        }
+
+        /// <summary>Cancellation may race a render boundary. Return the committed identity so the UI
+        /// can still show a track that was already audible before cancellation reached the engine.</summary>
+        public async Task<long> CancelQueuedNextAsync()
+        {
+            byte[] reply = new byte[16];
+            var (type, length) = await SendWithResponseAsync(CommandId.QueueNext, new GaplessRequest(0, 0, "").Write(), reply);
+            if (type != MessageTypeId.Success || length != reply.Length)
+                throw new InvalidOperationException("Next-track cancellation was not confirmed.");
+            return System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(reply);
         }
 
         public void MusicEnd()
@@ -707,26 +617,35 @@ namespace WinUIMusicPlayer.Services
 
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            Task? initialization;
+            lock (_lifecycleGate)
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+                Volatile.Write(ref _connected, 0);
+                _connectionStop.Cancel();
+                initialization = _initializationTask;
+            }
             _license.StateChanged -= OnLicenseStateChanged;
             _correctionRetryCts.Cancel();
+            try { initialization?.GetAwaiter().GetResult(); }
+            catch (Exception ex) { _logger.LogDebug(ex, "Audio initialization ended during shutdown"); }
+            if (_stateClient is not null)
+            {
+                _stateClient.Faulted -= OnTransportFault;
+                _stateClient.DspStateChanged -= OnDspState;
+                _stateClient.NotificationReceived -= OnNotification;
+                try { _stateClient.Dispose(); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Audio state pipe cleanup failed"); }
+            }
+            if (_transport is not null)
+            {
+                _transport.Faulted -= OnTransportFault;
+                _transport.CommandFailed -= OnCommandFailed;
+                try { _transport.Dispose(); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Audio command pipe cleanup failed"); }
+            }
             _correctionRetryCts.Dispose();
-            _notificationCts?.Cancel();
-            _serverMonitorCts?.Cancel();
-            _transport?.Dispose();
-            _notificationListenerTask?.GetAwaiter().GetResult();
-            _dspListenerTask?.GetAwaiter().GetResult();
-            _serverMonitorTask?.GetAwaiter().GetResult();
-            _notificationCts?.Dispose();
-            _serverMonitorCts?.Dispose();
-            _dspMailbox?.Dispose();
-            _correctionMailbox?.Dispose();
-            _progressMailbox?.Dispose();
-            _accessor?.Dispose();
-            _mmf?.Dispose();
-            _requestReadySemaphore?.Dispose();
-            _responseReadySemaphore?.Dispose();
-            _notificationReadySemaphore?.Dispose();
+            _connectionStop.Dispose();
             GC.SuppressFinalize(this);
         }
     }

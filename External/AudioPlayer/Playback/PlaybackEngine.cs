@@ -154,6 +154,9 @@ public sealed partial class PlaybackEngine : IDisposable
         CancelStreams();
         lock (_streamLock)
         {
+            AdoptGapless();
+            CancelGapless();
+            _currentGaplessToken = 0;
             MusicUrl = musicUrl;
             if (IsFadingEnabled && IsPlaying && _session is { Kind: RenderKind.Pcm } && _output is { IsFailed: false })
             {
@@ -225,7 +228,11 @@ public sealed partial class PlaybackEngine : IDisposable
             if (asio.SourceKind != RenderKind.Pcm) return false;
             if (asio.SourceChannels != next.Channels || asio.DeviceIndex != BassASIODeviceId) return false;
             next.ConfigureDsp(ResolveDsp(asio.DeviceId));
-            return asio.AttachSource(next);
+            var source = new GaplessSource(next);
+            if (!asio.AttachSource(source)) return false;
+            CancelGapless();
+            _gaplessSource = source;
+            return true;
         }
         if ((OutputMode is "WasapiExclusivePush" or "WasapiExclusiveEvent" || (surround && OutputMode != "ASIO"))
             && _output is WasapiOutput wasapi && wasapi.IsExclusive && !wasapi.IsFailed)
@@ -245,7 +252,13 @@ public sealed partial class PlaybackEngine : IDisposable
                 && !string.Equals(_lastDefaultDeviceId, wasapi.DeviceId ?? "", StringComparison.OrdinalIgnoreCase))
                 return false;
             next.ConfigureDsp(ResolveDsp(wasapi.DeviceId));
-            bool attached = wasapi.AttachSource(next);
+            var source = new GaplessSource(next);
+            bool attached = wasapi.AttachSource(source);
+            if (attached)
+            {
+                CancelGapless();
+                _gaplessSource = source;
+            }
             if (attached && IsSurroundSession(next)) _surroundEndpoint = wasapi.DeviceId;
             return attached;
         }
@@ -273,6 +286,7 @@ public sealed partial class PlaybackEngine : IDisposable
     /// <summary>输出失效后的重建（保进度）。调用方持有 _streamLock。恢复计划由调用方管理。</summary>
     private bool TryRebuildOutput(long positionMs)
     {
+        CancelGapless();
         var url = MusicUrl;
         if (string.IsNullOrWhiteSpace(url)) return false;
         var kind = _session?.Kind;
@@ -293,7 +307,7 @@ public sealed partial class PlaybackEngine : IDisposable
             var remoteKind = forceSharedFormat ? RenderKind.Pcm : kindOverride ?? StreamingKind(remote.Source);
             return Session.Open(this, url, remoteKind, DsdPcmFreq, DsdGain, Latency,
                 forcedRate: mix?.SampleRate, forcedChannels: mix?.Channels, maxChannels: 2,
-                source: remote.Source, cancellationToken: remote.Cancel.Token);
+                source: remote.Source, cancellationToken: remote.Cancel.Token, playbackRate: EffectivePlaybackRate);
         }
         if (ExperimentalAtmosPassthrough && !forceSharedFormat && !_atmosUseSharedPcm && !_surroundFallback
             && kindOverride is null or RenderKind.Eac3)
@@ -350,7 +364,7 @@ public sealed partial class PlaybackEngine : IDisposable
             }
         }
         bool surround51 = ExperimentalSurround51 && !forceSharedFormat && !_atmosUseSharedPcm && !_surroundFallback && kind == RenderKind.Pcm;
-        var session = Session.Open(this, url, kind, DsdPcmFreq, DsdGain, Latency, forcedRate, forcedChannels, maxChannels, surround51);
+        var session = Session.Open(this, url, kind, DsdPcmFreq, DsdGain, Latency, forcedRate, forcedChannels, maxChannels, surround51, playbackRate: EffectivePlaybackRate);
         if (session != null)
         {
             session.ConfigureDsp(_deviceCorrections.Enabled
@@ -463,14 +477,14 @@ public sealed partial class PlaybackEngine : IDisposable
             case "WasapiExclusiveEvent":
             {
                 var output = new WasapiOutput(true, OutputMode == "WasapiExclusivePush");
-                if (output.Start(BassOutputDeviceId, Latency, session, 1, WasapiEndpointId, id => PrepareOutputDsp(session, id))) return output;
+                if (output.Start(BassOutputDeviceId, Latency, OutputSource(session), 1, WasapiEndpointId, id => PrepareOutputDsp(session, id))) return output;
                 output.Dispose();
                 return null;
             }
             case "ASIO":
             {
                 var output = new AsioOutput();
-                if (output.Start(BassASIODeviceId, session, id => PrepareOutputDsp(session, id))) return output;
+                if (output.Start(BassASIODeviceId, OutputSource(session), id => PrepareOutputDsp(session, id))) return output;
                 output.Dispose();
                 return null;
             }
@@ -490,7 +504,7 @@ public sealed partial class PlaybackEngine : IDisposable
             string? endpointId = _atmosUseSharedPcm ? _atmosResolvedEndpoint
                 : _surroundFallback ? _surroundEndpoint : OutputMode is "DirectSound" or "ASIO" ? null : WasapiEndpointId;
             var output = new WasapiOutput(false, false);
-            if (output.Start(deviceIndex, Latency, session, OutputMode == "WasapiShared" ? Volume : 1, endpointId,
+            if (output.Start(deviceIndex, Latency, OutputSource(session), OutputMode == "WasapiShared" ? Volume : 1, endpointId,
                 id => PrepareOutputDsp(session, id))) return output;
             if (!output.NeedsMixFormatSession)
             {
@@ -508,7 +522,7 @@ public sealed partial class PlaybackEngine : IDisposable
             if (_session == null) return null;
             _session.RequestSeek(keepMs);
             var retry = new WasapiOutput(false, false);
-            if (retry.Start(deviceIndex, Latency, _session, OutputMode == "WasapiShared" ? Volume : 1,
+            if (retry.Start(deviceIndex, Latency, OutputSource(_session), OutputMode == "WasapiShared" ? Volume : 1,
                 endpointId,
                 id => PrepareOutputDsp(_session, id))) return retry;
             retry.Dispose();
@@ -525,6 +539,7 @@ public sealed partial class PlaybackEngine : IDisposable
     /// 调用方持锁；失败时输出已被释放，由调用方走停机/重试路径。</summary>
     private bool SwapSharedOutput()
     {
+        CancelGapless();
         try { _output?.Dispose(); } catch { }
         _output = null;
         var session = _session;
@@ -576,6 +591,8 @@ public sealed partial class PlaybackEngine : IDisposable
     /// <summary>暂停（持锁）：淡入淡出开启且输出健康时后台淡完再停机（延迟停机可被恢复取消）。</summary>
     private void PauseCore()
     {
+        AdoptGapless();
+        CancelGapless();
         if (_streamSlots.TryGetValue(_requestedStream, out var pending)) pending.WantsPlay = false;
         if (_streamSlots.TryGetValue(_currentStream, out var current)) current.WantsPlay = false;
         if (!IsPlaying) return;
@@ -615,6 +632,7 @@ public sealed partial class PlaybackEngine : IDisposable
     /// <summary>恢复/起播（持锁）。</summary>
     private void ResumeCore()
     {
+        AdoptGapless();
         if (_streamSlots.TryGetValue(_currentStream, out var current)) current.WantsPlay = true;
         // 关键（旧实现错位根源）：淡出已调度"延迟停机"，恢复若不递增令牌，
         // 延迟任务到点仍会 Pause 掉刚恢复的输出 → UI 播放中、实际静音
@@ -723,6 +741,8 @@ public sealed partial class PlaybackEngine : IDisposable
         CancelStreams();
         lock (_streamLock)
         {
+            AdoptGapless();
+            CancelGapless();
             Interlocked.Increment(ref _playGen);
             _recovery = null; // 用户停止：取消自动恢复
             try
@@ -745,6 +765,8 @@ public sealed partial class PlaybackEngine : IDisposable
         {
             try
             {
+                AdoptGapless();
+                CancelGapless();
                 if (_session is { CanSeek: false }) return;
                 bool restartCarrier = _session?.Kind == RenderKind.Eac3 && _output != null;
                 if (restartCarrier) { _output!.Dispose(); _output = null; }
@@ -772,7 +794,8 @@ public sealed partial class PlaybackEngine : IDisposable
     private void ApplyVolumeToOutput()
     {
         if (_pauseFadeActive) return; // 暂停淡出进行中：音量同步会让淡出斜坡跳回，等暂停完成后再说
-        var session = _session;
+        _gaplessSource?.Pending?.Gain?.SetImmediately(GainVolumeTarget);
+        var session = _gaplessSource?.Current ?? _session;
         var output = _output;
         if (session == null || output == null) return;
         switch (OutputMode)
@@ -798,7 +821,7 @@ public sealed partial class PlaybackEngine : IDisposable
         if (session == null) return (0, 0);
         long total = session.TotalMs;
         long anchor = session.FramesToMs(Volatile.Read(ref session.AnchorFrames));
-        long cur = Math.Min(Math.Max(anchor, session.CurrentMs - (_output?.PendingAudioMs ?? 0)),
+        long cur = Math.Min(Math.Max(anchor, session.CurrentMs - (long)((_output?.PendingAudioMs ?? 0) * session.PlaybackRate)),
             total > 0 ? total : long.MaxValue);
         return (cur, total);
     }
@@ -810,9 +833,10 @@ public sealed partial class PlaybackEngine : IDisposable
         if (!Monitor.TryEnter(_streamLock)) return false;
         try
         {
+            AdoptGapless();
             var (current, total) = GetTimeProgress();
             snapshot = new(0, _session?.TimelineEpoch ?? 0, current, total,
-                System.Diagnostics.Stopwatch.GetTimestamp(), IsPlaying && _output is { IsFailed: false }, _lastProgressSeekId);
+                System.Diagnostics.Stopwatch.GetTimestamp(), IsPlaying && _output is { IsFailed: false }, _lastProgressSeekId, _session?.PlaybackRate ?? 1, _currentGaplessToken);
             return true;
         }
         finally { Monitor.Exit(_streamLock); }
@@ -861,6 +885,7 @@ public sealed partial class PlaybackEngine : IDisposable
         {
             lock (_streamLock)
             {
+                CancelGapless();
                 Interlocked.Increment(ref _playGen);
                 _recovery = null; // 用户改设置：接管恢复
                 var (curMs, _) = GetTimeProgress();
@@ -936,21 +961,27 @@ public sealed partial class PlaybackEngine : IDisposable
 
     private void ApplyEqToSession()
     {
-        var session = _session;
+        if (_gaplessSource?.Pending is { } next)
+            next.Eq.Configure(next.SampleRate, IsEqualizerEnabled, EqGains, EqQ);
+        var session = _gaplessSource?.Current ?? _session;
         if (session == null || session.Kind != RenderKind.Pcm) return;
         session.Eq.Configure(session.SampleRate, IsEqualizerEnabled, EqGains, EqQ);
     }
 
-    /// <summary>更新 PCM 音效；不重建输出，不接触 DoP/Native DSD 位流。</summary>
+    /// <summary>更新 PCM 音效；倍速变化保进度重建会话，其他参数实时发布。位流旁路。</summary>
     public void UpdateDsp(DspSettings settings)
     {
         var normalized = settings.Sanitize();
         lock (_streamLock)
         {
+            AdoptGapless();
+            bool rateChanged = _session is { Kind: RenderKind.Pcm, CanSeek: true } pcm && pcm.PlaybackRate != (normalized.IsEnabled ? normalized.PlaybackRate : 1);
+            if (rateChanged || !normalized.GaplessPlayback) CancelGapless();
             _previewDeviceId = null;
             _previewSettings = null;
             _dspSettings = normalized;
-            _session?.ConfigureDsp(ResolveDsp(_output?.DeviceId));
+            if (rateChanged) ChangingSetting();
+            ApplyDspToSessions();
             QueueDspState();
         }
     }
@@ -960,6 +991,7 @@ public sealed partial class PlaybackEngine : IDisposable
     {
         lock (_streamLock)
         {
+            AdoptGapless();
             if (request.Sequence <= _previewSequence) return;
             _previewSequence = request.Sequence;
             if (request.End)
@@ -975,7 +1007,7 @@ public sealed partial class PlaybackEngine : IDisposable
                 _previewDeviceId = request.DeviceId;
                 _previewSettings = request.Settings.Sanitize();
             }
-            _session?.ConfigureDsp(ResolveDsp(_output?.DeviceId));
+            ApplyDspToSessions();
             QueueDspState();
         }
     }
@@ -986,10 +1018,11 @@ public sealed partial class PlaybackEngine : IDisposable
         var validated = settings.Validate();
         lock (_streamLock)
         {
+            AdoptGapless();
             _deviceCorrections = validated;
             _previewDeviceId = null;
             _previewSettings = null;
-            _session?.ConfigureDsp(ResolveDsp(_output?.DeviceId));
+            ApplyDspToSessions();
             QueueDspState();
         }
     }
@@ -1022,6 +1055,7 @@ public sealed partial class PlaybackEngine : IDisposable
                 ?? new DspState(kind, eq, _session?.Channels ?? 0, LoudnessStatus.Off, 0, double.NaN, enabled);
             return state with
             {
+                CanChangePlaybackRate = _session == null || _session.Kind == RenderKind.Pcm && _session.CanSeek,
                 OutputGeneration = _outputGeneration,
                 OutputDeviceId = _output is { IsFailed: false } output ? output.DeviceId ?? "" : "",
                 AtmosStatus = !ExperimentalAtmosPassthrough ? AtmosPlaybackStatus.Off
@@ -1061,7 +1095,9 @@ public sealed partial class PlaybackEngine : IDisposable
             if (Volatile.Read(ref _disposed) != 0) return;
             var plan = _recovery;
             if (plan != null) { TickRecovery(plan); return; }
+            SynchronizeGapless();
             HandleEndpointEvents();
+            PrepareGaplessIfDue();
             if (!IsPlaying) return;
             var session = _session;
             var output = _output;
@@ -1152,6 +1188,7 @@ public sealed partial class PlaybackEngine : IDisposable
             {
                 lock (_streamLock)
                 {
+                    AdoptGapless();
                     if (Volatile.Read(ref _disposed) == 0 && IsPlaying && ReferenceEquals(session, _session)
                         && ReferenceEquals(output, _output) && session.IsDrained && output is { IsDrained: true })
                     {
@@ -1298,8 +1335,11 @@ public sealed partial class PlaybackEngine : IDisposable
 
     private void DisposeSession()
     {
+        AdoptGapless();
+        CancelGapless();
         _output?.Dispose();
         _output = null;
+        _gaplessSource = null;
         _session?.Dispose();
         SetSession(null);
     }
@@ -1321,5 +1361,7 @@ public sealed partial class PlaybackEngine : IDisposable
             IsPlaying = false;
             DisposeSession();
         }
+        if (!StopGaplessAsync().Wait(1500))
+            Console.WriteLine("[gapless] preload shutdown pending; worker retains decoder ownership");
     }
 }

@@ -9,7 +9,6 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:tool="using:WinUIMusicPlayer.Utils"
     xmlns:ui="using:CommunityToolkit.WinUI"
-    xmlns:settings="using:WinUIMusicPlayer.View.SubView.Settings"
     mc:Ignorable="d">
 
     <ScrollViewer Style="{StaticResource SettingsScrollViewerStyle}">
@@ -57,7 +56,7 @@
                 <!--  应用信息（版本 + 相关链接，含免责声明在线版）  -->
                 <controls:SettingsExpander
                     x:Uid="AppTitleHeader"
-                    Description="© 2026 Sennpei Studio"
+                    Description="{x:Bind GetCopyrightDescription()}"
                     HeaderIcon="{ui:BitmapIcon Source=ms-appx:///Assets/Square44x44Logo.altform-unplated_targetsize-32.png}"
                     IsExpanded="True">
                     <TextBlock
@@ -109,19 +108,25 @@
                 <controls:SettingsCard
                     x:Uid="SpectrumVisualization"
                     Click="SpectrumVisualization_Click"
-                    Description="© 2026 Sennpei Studio"
+                    Description="{x:Bind GetCopyrightDescription()}"
                     HeaderIcon="{ui:BitmapIcon Source=ms-appx:///Assets/SpectrumVisualization.png}"
                     IsClickEnabled="True" />
 
                 <!--  缓存  -->
                 <controls:SettingsExpander x:Uid="AboutCacheExpander">
-                    <Button x:Uid="OpenCacheFolderButton" Command="{x:Bind ViewModel.AppViewModel.OpenCoverCacheLocationCommand, Mode=OneWay}" />
+                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <TextBlock
+                            Text="{x:Bind CacheViewModel.CacheSize, Mode=OneWay}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            VerticalAlignment="Center" />
+                        <Button x:Uid="OpenCacheFolderButton" Command="{x:Bind ViewModel.AppViewModel.OpenCoverCacheLocationCommand, Mode=OneWay}" />
+                    </StackPanel>
                     <controls:SettingsExpander.Items>
                         <controls:SettingsCard Description="{x:Bind tool:ToolUtils.GetString('CacheRootDescription'), Mode=OneWay}">
                             <controls:SettingsCard.Header>
                                 <TextBlock x:Uid="CoverDiskCache" />
                             </controls:SettingsCard.Header>
-                            <Grid Width="300" ColumnDefinitions="*,Auto,Auto">
+                            <Grid Width="300" ColumnDefinitions="*,Auto">
                                 <dev:AutoScrollView
                                     x:Name="AutoScrollViewControl"
                                     Grid.Column="0"
@@ -141,17 +146,39 @@
                                     x:Uid="ChangeMusicCoverCache"
                                     Grid.Column="1"
                                     Command="{x:Bind ViewModel.AppViewModel.ChangeCoverCacheLocationCommand, Mode=OneWay}" />
-                                <Button
-                                    x:Uid="ClearCoverCacheButton"
-                                    Grid.Column="2"
-                                    Margin="10,0,0,0"
-                                    Click="ClearCoverCache_Click" />
                             </Grid>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard>
+                            <controls:SettingsCard.Header>
+                                <TextBlock x:Uid="WebDavCacheTitle" />
+                            </controls:SettingsCard.Header>
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <ToggleSwitch
+                                    IsOn="{x:Bind CacheViewModel.CacheEnabled, Mode=TwoWay}"
+                                    AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('WebDavCacheToggleLabel')}" />
+                                <NumberBox
+                                    Width="110"
+                                    Minimum="1"
+                                    Maximum="1024"
+                                    Value="{x:Bind CacheViewModel.CacheLimitGiB, Mode=TwoWay}"
+                                    SpinButtonPlacementMode="Compact"
+                                    AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('WebDavCacheLimitLabel')}" />
+                                <TextBlock Text="GiB" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard x:Uid="CacheCleanupCard">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <Button x:Uid="ClearCoverCacheButton" Click="ClearCoverCache_Click" />
+                                <Button x:Uid="WebDavClearCacheButton" Command="{x:Bind CacheViewModel.ClearCacheCommand}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard
+                            ContentAlignment="Left"
+                            Visibility="{x:Bind tool:BindUtils.NonEmptyTextVisibility(CacheViewModel.Status), Mode=OneWay}">
+                            <TextBlock Text="{x:Bind CacheViewModel.Status, Mode=OneWay}" TextWrapping="Wrap" />
                         </controls:SettingsCard>
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
-
-                <settings:WebDavCacheControl />
 
                 <!--  日志  -->
                 <controls:SettingsCard x:Uid="AboutLogCard">

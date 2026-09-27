@@ -1,32 +1,29 @@
-using System.IO.Pipes;
+using System.Text.Json;
 using AudioPlayer.Playback;
 using BassPlayerIpc.Shared;
 
 namespace AudioPlayer;
 
-/// <summary>Independent bounded control connections keep stop/pause responsive while a source is being prepared.</summary>
-internal sealed class StreamingServer(PlaybackEngine engine)
+/// <summary>Independent persistent control lanes keep stop/pause available while preparation or seek runs.</summary>
+internal sealed class StreamingServer(PlaybackEngine engine, Guid instanceId)
 {
-    public Task RunAsync(CancellationToken ct) => Task.WhenAll(Enumerable.Range(0, 4).Select(_ => ServeAsync(ct)));
-    private async Task ServeAsync(CancellationToken ct)
+    public Task RunAsync(CancellationToken token)
+        => new PipeCommandServer(StreamingWire.PipeName, instanceId, Handle, instances: 4).RunAsync(token);
+
+    private PipeResponse Handle(CommandId id, ReadOnlySpan<byte> payload)
     {
-        while (!ct.IsCancellationRequested)
+        try
         {
-            using var pipe = new NamedPipeServerStream(StreamingWire.PipeName, PipeDirection.InOut, 4,
-                PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-            try
-            {
-                await pipe.WaitForConnectionAsync(ct);
-                using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                requestTimeout.CancelAfter(TimeSpan.FromSeconds(10));
-                var command = await StreamingWire.ReadAsync(pipe, StreamingJson.Default.StreamCommand, requestTimeout.Token);
-                var reply = engine.HandleStreamCommand(command);
-                await StreamingWire.WriteAsync(pipe, reply, StreamingJson.Default.StreamReply, requestTimeout.Token);
-            }
-            catch (OperationCanceledException) { }
-            catch (IOException) { }
-            catch (System.Text.Json.JsonException) { }
-            catch (ArgumentException) { }
+            if (id != CommandId.StreamControl || payload.Length > StreamingWire.MaxPayload)
+                return new(MessageTypeId.Failed, ReadOnlyMemory<byte>.Empty);
+            var command = JsonSerializer.Deserialize(payload, StreamingJson.Default.StreamCommand)
+                ?? throw new InvalidDataException("Empty streaming command.");
+            var reply = engine.HandleStreamCommand(command);
+            return new(MessageTypeId.Success, JsonSerializer.SerializeToUtf8Bytes(reply, StreamingJson.Default.StreamReply));
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidDataException)
+        {
+            return new(MessageTypeId.Failed, ReadOnlyMemory<byte>.Empty);
         }
     }
 }

@@ -1,4 +1,3 @@
-using System.IO.Pipes;
 using BassPlayerIpc.Shared;
 
 // Deterministic decoder peer on a private real pipe. It fetches the real loopback bridge while
@@ -26,39 +25,32 @@ internal sealed class PlaybackPeer : IAsyncDisposable
         using var response = await http.SendAsync(request);
         return await response.Content.ReadAsByteArrayAsync();
     }
-    private async Task ServeAsync()
+    private Task ServeAsync()
+        => new PipeCommandServer(StreamingWire.PipeName, Guid.NewGuid(), Handle, instances: 4).RunAsync(_stop.Token);
+
+    private PipeResponse Handle(CommandId id, ReadOnlySpan<byte> payload)
     {
-        try
+        var command = System.Text.Json.JsonSerializer.Deserialize(payload, StreamingJson.Default.StreamCommand)!;
+        lock (_locations)
         {
-            while (!_stop.IsCancellationRequested)
+            if (command.Method == "prepare")
             {
-                try
-                {
-                    await using var pipe = new NamedPipeServerStream(StreamingWire.PipeName, PipeDirection.InOut, 1,
-                        PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-                    await pipe.WaitForConnectionAsync(_stop.Token);
-                    var command = await StreamingWire.ReadAsync(pipe, StreamingJson.Default.StreamCommand, _stop.Token);
-                    if (command.Method == "prepare")
-                    {
-                        lock (_locations) _locations[command.SessionId] = command.Source!.Location;
-                        Current = command.SessionId;
-                        _phase = StreamPhase.Playing;
-                        Prepares++;
-                        LastPreparePositionMs = command.PositionMs;
-                    }
-                    if (command.Method == "pause") _phase = StreamPhase.Paused;
-                    if (command.Method == "play") _phase = StreamPhase.Playing;
-                    await StreamingWire.WriteAsync(pipe, new StreamReply
-                    {
-                        RequestId = command.RequestId, SessionId = command.SessionId, Accepted = true,
-                        Phase = _phase, WantsPlay = _phase == StreamPhase.Playing, DurationMs = 60000,
-                        PositionMs = command.Method == "prepare" ? command.PositionMs : Interlocked.Read(ref _positionMs)
-                    }, StreamingJson.Default.StreamReply, _stop.Token);
-                }
-                catch (IOException) { /* A canceled IPC request may close its pipe before the reply. */ }
+                _locations[command.SessionId] = command.Source!.Location;
+                Current = command.SessionId;
+                _phase = StreamPhase.Playing;
+                Prepares++;
+                LastPreparePositionMs = command.PositionMs;
             }
+            if (command.Method == "pause") _phase = StreamPhase.Paused;
+            if (command.Method == "play") _phase = StreamPhase.Playing;
+            var reply = new StreamReply
+            {
+                RequestId = command.RequestId, SessionId = command.SessionId, Accepted = true,
+                Phase = _phase, WantsPlay = _phase == StreamPhase.Playing, DurationMs = 60000,
+                PositionMs = command.Method == "prepare" ? command.PositionMs : Interlocked.Read(ref _positionMs)
+            };
+            return new(MessageTypeId.Success, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(reply, StreamingJson.Default.StreamReply));
         }
-        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
     }
     public async ValueTask DisposeAsync() { _stop.Cancel(); await _server; _stop.Dispose(); }
 }

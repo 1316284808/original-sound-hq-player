@@ -304,6 +304,39 @@
                     </controls:SettingsExpander.Items>
                 </controls:SettingsExpander>
 
+                <controls:SettingsExpander Header="{x:Bind tool:ToolUtils.GetString('WindowBackgroundTitle')}">
+                    <controls:SettingsExpander.Items>
+                        <controls:SettingsCard Header="{x:Bind tool:ToolUtils.GetString('WindowBackgroundImage')}"
+                            Description="{x:Bind tool:ToolUtils.GetString('WindowBackgroundDescription')}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="{x:Bind tool:ToolUtils.GetString('WindowBackgroundChoose')}"
+                                    Command="{x:Bind ViewModel.AppViewModel.ChooseWindowBackgroundCommand}" />
+                                <Button Content="{x:Bind tool:ToolUtils.GetString('WindowBackgroundClear')}"
+                                    Command="{x:Bind ViewModel.AppViewModel.ClearWindowBackgroundCommand}" />
+                            </StackPanel>
+                        </controls:SettingsCard>
+                        <controls:SettingsCard ContentAlignment="Left"
+                            Visibility="{x:Bind tool:BindUtils.StringToVisibilityConverter(ViewModel.AppViewModel.WindowBackgroundImagePath), Mode=OneWay}">
+                            <TextBlock Text="{x:Bind ViewModel.AppViewModel.WindowBackgroundImagePath, Mode=OneWay}"
+                                TextWrapping="Wrap" />
+                        </controls:SettingsCard>
+                        <controls:SettingsCard Header="{x:Bind tool:ToolUtils.GetString('WindowBackgroundBlur')}">
+                            <Grid Width="300" ColumnDefinitions="*,80" ColumnSpacing="12">
+                                <Slider Minimum="0" Maximum="100" StepFrequency="1" VerticalAlignment="Center"
+                                    Value="{x:Bind ViewModel.AppViewModel.WindowBackgroundBlurAmount, Mode=TwoWay}"
+                                    AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('WindowBackgroundBlur')}" />
+                                <NumberBox Grid.Column="1" Minimum="0" Maximum="100" SmallChange="1" VerticalAlignment="Center"
+                                    Value="{x:Bind ViewModel.AppViewModel.WindowBackgroundBlurAmount, Mode=TwoWay}"
+                                    AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('WindowBackgroundBlur')}" />
+                            </Grid>
+                        </controls:SettingsCard>
+                    </controls:SettingsExpander.Items>
+                </controls:SettingsExpander>
+                <InfoBar IsClosable="False" Severity="Warning"
+                    IsOpen="{x:Bind tool:BindUtils.IsNotEmptyString(ViewModel.AppViewModel.WindowBackgroundError), Mode=OneWay}"
+                    Visibility="{x:Bind tool:BindUtils.StringToVisibilityConverter(ViewModel.AppViewModel.WindowBackgroundError), Mode=OneWay}"
+                    Message="{x:Bind ViewModel.AppViewModel.WindowBackgroundError, Mode=OneWay}" />
+
                 <controls:SettingsExpander>
                     <controls:SettingsExpander.Header>
                         <TextBlock x:Uid="ThemeStyle" TextWrapping="Wrap" />

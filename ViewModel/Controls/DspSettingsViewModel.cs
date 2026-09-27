@@ -328,6 +328,12 @@ public partial class DspSettingsViewModel : ObservableObject
         _syncing = true;
         DspSettings settings = AppSettings.Dsp.ToUnifiedGain();
         bool effectsActive = _available && settings.IsEnabled;
+        GaplessPlayback = settings.GaplessPlayback;
+        PlaybackRate = settings.PlaybackRate;
+        CompressorEnabled = effectsActive && settings.CompressorEnabled;
+        CompressorThresholdDb = settings.CompressorThresholdDb;
+        CompressorRatio = settings.CompressorRatio;
+        CompressorMakeupDb = settings.CompressorMakeupDb;
         MasterEnabled = _available && settings.IsEnabled;
         NormalizeLoudness = effectsActive && settings.NormalizeLoudness;
         TargetLufs = settings.TargetLufs;
@@ -364,6 +370,7 @@ public partial class DspSettingsViewModel : ObservableObject
         bool effectsActive = available && state!.Value.IsEnabled && AppSettings.Dsp.IsEnabled;
         bool editabilityChanged = EffectsActive != effectsActive || _lastRestrictedFeatures != _license.RestrictedFeatures;
         EffectsActive = effectsActive;
+        OnPropertyChanged(nameof(PlaybackRateEditable));
         _lastRestrictedFeatures = _license.RestrictedFeatures;
         if (editabilityChanged)
         {
@@ -435,6 +442,11 @@ public partial class DspSettingsViewModel : ObservableObject
         var saved = AppSettings.Dsp;
         var candidate = (saved with
         {
+            PlaybackRate = PlaybackRate,
+            CompressorEnabled = CompressorEnabled,
+            CompressorThresholdDb = CompressorThresholdDb,
+            CompressorRatio = CompressorRatio,
+            CompressorMakeupDb = CompressorMakeupDb,
             ConvolutionEnabled = ConvolutionEnabled,
             AutoPreamp = AutoPreamp, ConvolutionTrimDb = 0, AutoConvolutionHeadroom = false,
             IsEnabled = AppSettings.Dsp.IsEnabled,
