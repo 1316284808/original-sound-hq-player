@@ -6,6 +6,31 @@ internal static unsafe partial class Program
 {
     private static void RunPlaybackEffectsTests()
     {
+        RunGaplessLifecycleTests();
+        Run("Export: failed native resampler initialization releases ownership", () =>
+        {
+            FFmpeg.AutoGen.AVChannelLayout stereo = default;
+            FFmpeg.AutoGen.ffmpeg.av_channel_layout_default(&stereo, 2);
+            FFmpeg.AutoGen.SwrContext* context = null;
+            try
+            {
+                Require(FFmpeg.AutoGen.ffmpeg.swr_alloc_set_opts2(&context, &stereo,
+                    FFmpeg.AutoGen.AVSampleFormat.AV_SAMPLE_FMT_FLT, 48000, &stereo,
+                    FFmpeg.AutoGen.AVSampleFormat.AV_SAMPLE_FMT_FLT, 0, 0, null) >= 0 && context != null,
+                    "Native setup did not allocate");
+                try
+                {
+                    WinUIMusicPlayer.AudioConverters.FFmpegAudioConverter.InitializeOwnedResampler(ref context);
+                    throw new Exception("Invalid input rate initialized");
+                }
+                catch (InvalidOperationException) { Require(context == null, "Failed resampler retained native ownership"); }
+            }
+            finally
+            {
+                FFmpeg.AutoGen.ffmpeg.swr_free(&context);
+                FFmpeg.AutoGen.ffmpeg.av_channel_layout_uninit(&stereo);
+            }
+        });
         Run("Dynamics: linked compression lifts quiet audio, reduces loud audio and limits transients", () =>
         {
             var settings = new DspSettings { CompressorEnabled = true };
@@ -172,13 +197,17 @@ internal static unsafe partial class Program
             Require(source.Pending == null, "Stale epoch accepted");
             var missing = new GaplessRequest(first.TimelineEpoch, 10, path + ".missing");
             engine.QueueNext(missing);
-            var failedWork = (Task)typeof(PlaybackEngine).GetField("_gaplessWork", Private)!.GetValue(engine)!;
+            var preloader = (GaplessPreloader)typeof(PlaybackEngine).GetField("_gaplessPreloader", Private)!.GetValue(engine)!;
+            var failedWork = preloader.Completion;
             failedWork.GetAwaiter().GetResult();
             engine.QueueNext(missing);
-            Require(ReferenceEquals(failedWork, typeof(PlaybackEngine).GetField("_gaplessWork", Private)!.GetValue(engine)),
+            Require(ReferenceEquals(failedWork, preloader.Completion),
                 "Unchanged failed plan repeatedly reopened the file");
             engine.QueueNext(new(first.TimelineEpoch, 11, path));
             Require(SpinWait.SpinUntil(() => source.Pending is { ReadyFrames: > 4800 }, 5000), "Next did not preload");
+            var prepared = source.Pending;
+            engine.UpdateDsp(new DspSettings { Balance = 0.2, CompressorEnabled = true, AutoPreamp = false });
+            Require(ReferenceEquals(source.Pending, prepared), "Ordinary DSP update discarded the prepared session");
             source.FillPcm(new double[512], 256);
             engine.SynchronizeGapless();
             Require(engine.MusicUrl == path && source.CompletedToken == 11, "Engine did not adopt next track");

@@ -211,13 +211,21 @@ namespace WinUIMusicPlayer.AudioConverters
                 void RebuildSwr(ref SwrContext* swr, AVCodecContext* encoderCtx, AVFrame* f)
                 {
                     SwrContext* fresh = null;
-                    ffmpeg.swr_alloc_set_opts2(&fresh, &encoderCtx->ch_layout, primaryFmt, outRate,
-                        &f->ch_layout, (AVSampleFormat)f->format, f->sample_rate, 0, null);
-                    if (fresh == null || ffmpeg.swr_init(fresh) < 0)
-                        throw new InvalidOperationException("重采样器按新输入参数重建失败");
-                    SwrContext* old = swr;
-                    swr = fresh;
-                    if (old != null) ffmpeg.swr_free(&old);
+                    try
+                    {
+                        int result = ffmpeg.swr_alloc_set_opts2(&fresh, &encoderCtx->ch_layout, primaryFmt, outRate,
+                            &f->ch_layout, (AVSampleFormat)f->format, f->sample_rate, 0, null);
+                        if (result < 0) throw new InvalidOperationException($"重采样器分配失败: {result}");
+                        InitializeOwnedResampler(ref fresh);
+                        SwrContext* old = swr;
+                        swr = fresh;
+                        fresh = null; // 外层转换流程接管；失败时仍保留旧上下文供 finally 清理。
+                        if (old != null) ffmpeg.swr_free(&old);
+                    }
+                    finally
+                    {
+                        if (fresh != null) ffmpeg.swr_free(&fresh);
+                    }
                     swrInFmt = (AVSampleFormat)f->format;
                     swrInRate = f->sample_rate;
                     swrInNbCh = f->ch_layout.nb_channels;
@@ -308,6 +316,15 @@ namespace WinUIMusicPlayer.AudioConverters
                 if (decCtx != null) ffmpeg.avcodec_free_context(&decCtx);
                 if (inFmt != null) ffmpeg.avformat_close_input(&inFmt);
             }
+        }
+
+        // 初始化失败后调用方不能继续持有半初始化的原生资源。
+        internal static void InitializeOwnedResampler(ref SwrContext* context)
+        {
+            int result = context == null ? -1 : ffmpeg.swr_init(context);
+            if (result >= 0) return;
+            fixed (SwrContext** owned = &context) ffmpeg.swr_free(owned);
+            throw new InvalidOperationException($"重采样器按新输入参数初始化失败: {result}");
         }
 
         // ──────────────── 内联元数据写入 ────────────────

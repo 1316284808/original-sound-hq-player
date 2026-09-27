@@ -7,31 +7,38 @@ namespace AudioPlayer.Playback;
 /// Storage is bounded independently of track duration and reused after seeking.</summary>
 internal sealed class TempoProcessor
 {
-    private readonly int _channels, _hop, _search, _stride;
-    private readonly double _rate;
+    private readonly int _channels;
+    private readonly int _hopFrames, _searchFrames, _searchStride;
+    private readonly double _playbackRate;
     private readonly double[] _input, _tail, _output;
-    private long _base, _produced;
-    private int _count, _outputOffset, _outputFrames;
-    private bool _eof, _started;
+    // Source frames and output frames are different time domains when rate != 1.
+    private long _inputStartFrame;
+    private long _outputFramesProduced;
+    private int _inputFrameCount, _outputReadOffset, _outputFrameCount;
+    private bool _inputEnded, _hasOverlap;
 
     internal TempoProcessor(int sampleRate, int channels, double rate)
     {
         _channels = channels;
-        _rate = rate;
-        _hop = Math.Max(16, sampleRate / 100);
-        _search = Math.Max(8, sampleRate / 200);
-        _stride = Math.Max(1, sampleRate / 12000);
+        _playbackRate = rate;
+        _hopFrames = Math.Max(16, sampleRate / 100);
+        _searchFrames = Math.Max(8, sampleRate / 200);
+        _searchStride = Math.Max(1, sampleRate / 12000);
         // Hold the next analysis hop plus its search window, including large source skips at 5x.
-        _input = new double[(_hop * ((int)Math.Ceiling(rate) + 4) + _search * 2 + 16384) * channels];
-        _tail = new double[_hop * channels];
-        _output = new double[_hop * channels];
+        _input = new double[(_hopFrames * ((int)Math.Ceiling(rate) + 4) + _searchFrames * 2 + 16384) * channels];
+        _tail = new double[_hopFrames * channels];
+        _output = new double[_hopFrames * channels];
     }
 
     internal void Reset()
     {
-        _base = _produced = 0;
-        _count = _outputOffset = _outputFrames = 0;
-        _eof = _started = false;
+        _inputStartFrame = 0;
+        _outputFramesProduced = 0;
+        _inputFrameCount = 0;
+        _outputReadOffset = 0;
+        _outputFrameCount = 0;
+        _inputEnded = false;
+        _hasOverlap = false;
         Array.Clear(_tail);
     }
 
@@ -40,80 +47,88 @@ internal sealed class TempoProcessor
         int written = 0, requested = destination.Length / _channels;
         while (written < requested)
         {
-            if (_outputOffset == _outputFrames && !Generate(decoder)) break;
-            int take = Math.Min(requested - written, _outputFrames - _outputOffset);
-            _output.AsSpan(_outputOffset * _channels, take * _channels)
+            if (_outputReadOffset == _outputFrameCount && !Generate(decoder)) break;
+            int take = Math.Min(requested - written, _outputFrameCount - _outputReadOffset);
+            _output.AsSpan(_outputReadOffset * _channels, take * _channels)
                 .CopyTo(destination[(written * _channels)..]);
             written += take;
-            _outputOffset += take;
+            _outputReadOffset += take;
         }
         return written;
     }
 
     private bool Generate(PcmDecoder decoder)
     {
-        long ideal = (long)Math.Round(_produced * _rate);
-        long keep = Math.Max(_base, ideal - _search);
-        int drop = (int)Math.Min(_count, keep - _base);
+        long ideal = (long)Math.Round(_outputFramesProduced * _playbackRate);
+        long keep = Math.Max(_inputStartFrame, ideal - _searchFrames);
+        int drop = (int)Math.Min(_inputFrameCount, keep - _inputStartFrame);
         if (drop > 0)
         {
-            _input.AsSpan(drop * _channels, (_count - drop) * _channels).CopyTo(_input);
-            _base += drop;
-            _count -= drop;
+            _input.AsSpan(drop * _channels, (_inputFrameCount - drop) * _channels).CopyTo(_input);
+            _inputStartFrame += drop;
+            _inputFrameCount -= drop;
         }
-        long required = ideal + _search + 2 * _hop;
-        while (!_eof && _base + _count < required)
+        long required = ideal + _searchFrames + 2 * _hopFrames;
+        while (!_inputEnded && _inputStartFrame + _inputFrameCount < required)
         {
-            int read = decoder.Read(_input.AsSpan(_count * _channels));
-            if (read == 0) _eof = true;
-            else _count += read;
+            int read = decoder.Read(_input.AsSpan(_inputFrameCount * _channels));
+            if (read == 0) _inputEnded = true;
+            else _inputFrameCount += read;
         }
-        long remaining = _eof ? (long)Math.Round((_base + _count) / _rate) - _produced : _hop;
-        if (remaining <= 0 || _count == 0) return false;
-        int frames = (int)Math.Min(_hop, remaining);
-        int center = (int)Math.Clamp(ideal - _base, 0, Math.Max(0, _count - 2 * _hop));
+        long remaining = _inputEnded ? (long)Math.Round((_inputStartFrame + _inputFrameCount) / _playbackRate) - _outputFramesProduced : _hopFrames;
+        if (remaining <= 0 || _inputFrameCount == 0) return false;
+        int frames = (int)Math.Min(_hopFrames, remaining);
+        int center = (int)Math.Clamp(ideal - _inputStartFrame, 0, Math.Max(0, _inputFrameCount - 2 * _hopFrames));
         int chosen = center;
-        if (_started && _count >= 2 * _hop)
+        if (_hasOverlap && _inputFrameCount >= 2 * _hopFrames)
         {
-            int low = Math.Max(0, center - _search), high = Math.Min(_count - 2 * _hop, center + _search);
+            int low = Math.Max(0, center - _searchFrames), high = Math.Min(_inputFrameCount - 2 * _hopFrames, center + _searchFrames);
             double best = double.NegativeInfinity;
             // Coarse search followed by sample-accurate refinement keeps high-rate input bounded.
-            for (int candidate = low; candidate <= high; candidate += _stride)
+            for (int candidate = low; candidate <= high; candidate += _searchStride)
             {
                 double score = Correlation(candidate);
-                if (score > best) { best = score; chosen = candidate; }
+                if (score > best)
+                {
+                    best = score;
+                    chosen = candidate;
+                }
             }
-            int fineLow = Math.Max(low, chosen - _stride), fineHigh = Math.Min(high, chosen + _stride);
+            int fineLow = Math.Max(low, chosen - _searchStride), fineHigh = Math.Min(high, chosen + _searchStride);
             for (int candidate = fineLow; candidate <= fineHigh; candidate++)
             {
                 double score = Correlation(candidate);
-                if (score > best) { best = score; chosen = candidate; }
+                if (score > best)
+                {
+                    best = score;
+                    chosen = candidate;
+                }
             }
         }
-        for (int frame = 0; frame < _hop; frame++)
+        for (int frame = 0; frame < _hopFrames; frame++)
         {
-            double mix = (double)frame / _hop;
+            double mix = (double)frame / _hopFrames;
             for (int ch = 0; ch < _channels; ch++)
             {
                 int i = frame * _channels + ch;
                 double sample = Sample(chosen + frame, ch);
-                _output[i] = _started ? _tail[i] * (1 - mix) + sample * mix : sample;
-                _tail[i] = Sample(chosen + _hop + frame, ch);
+                _output[i] = _hasOverlap ? _tail[i] * (1 - mix) + sample * mix : sample;
+                _tail[i] = Sample(chosen + _hopFrames + frame, ch);
             }
         }
-        _started = true;
-        _produced += frames;
-        _outputOffset = 0;
-        _outputFrames = frames;
+        _hasOverlap = true;
+        _outputFramesProduced += frames;
+        _outputReadOffset = 0;
+        _outputFrameCount = frames;
         return true;
     }
 
-    private double Sample(int frame, int channel) => frame < _count ? _input[frame * _channels + channel] : 0;
+    private double Sample(int frame, int channel) => frame < _inputFrameCount ? _input[frame * _channels + channel] : 0;
 
     private double Correlation(int start)
     {
         double dot = 0, energy = 1e-30;
-        for (int frame = 0; frame < _hop; frame += _stride)
+        for (int frame = 0; frame < _hopFrames; frame += _searchStride)
             for (int ch = 0; ch < _channels; ch++)
             {
                 double sample = _input[(start + frame) * _channels + ch];

@@ -976,12 +976,12 @@ public sealed partial class PlaybackEngine : IDisposable
         {
             AdoptGapless();
             bool rateChanged = _session is { Kind: RenderKind.Pcm, CanSeek: true } pcm && pcm.PlaybackRate != (normalized.IsEnabled ? normalized.PlaybackRate : 1);
-            CancelGapless();
+            if (rateChanged || !normalized.GaplessPlayback) CancelGapless();
             _previewDeviceId = null;
             _previewSettings = null;
             _dspSettings = normalized;
             if (rateChanged) ChangingSetting();
-            _session?.ConfigureDsp(ResolveDsp(_output?.DeviceId));
+            ApplyDspToSessions();
             QueueDspState();
         }
     }
@@ -991,6 +991,7 @@ public sealed partial class PlaybackEngine : IDisposable
     {
         lock (_streamLock)
         {
+            AdoptGapless();
             if (request.Sequence <= _previewSequence) return;
             _previewSequence = request.Sequence;
             if (request.End)
@@ -1006,8 +1007,7 @@ public sealed partial class PlaybackEngine : IDisposable
                 _previewDeviceId = request.DeviceId;
                 _previewSettings = request.Settings.Sanitize();
             }
-            CancelGapless();
-            _session?.ConfigureDsp(ResolveDsp(_output?.DeviceId));
+            ApplyDspToSessions();
             QueueDspState();
         }
     }
@@ -1019,11 +1019,10 @@ public sealed partial class PlaybackEngine : IDisposable
         lock (_streamLock)
         {
             AdoptGapless();
-            CancelGapless();
             _deviceCorrections = validated;
             _previewDeviceId = null;
             _previewSettings = null;
-            _session?.ConfigureDsp(ResolveDsp(_output?.DeviceId));
+            ApplyDspToSessions();
             QueueDspState();
         }
     }
@@ -1098,6 +1097,7 @@ public sealed partial class PlaybackEngine : IDisposable
             if (plan != null) { TickRecovery(plan); return; }
             SynchronizeGapless();
             HandleEndpointEvents();
+            PrepareGaplessIfDue();
             if (!IsPlaying) return;
             var session = _session;
             var output = _output;
@@ -1361,7 +1361,7 @@ public sealed partial class PlaybackEngine : IDisposable
             IsPlaying = false;
             DisposeSession();
         }
-        if (_gaplessWork is { } work && !work.Wait(1500))
+        if (!StopGaplessAsync().Wait(1500))
             Console.WriteLine("[gapless] preload shutdown pending; worker retains decoder ownership");
     }
 }

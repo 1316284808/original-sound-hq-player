@@ -532,7 +532,13 @@ namespace WinUIMusicPlayer.Services
             Publish(CommandId.ChangeVolume, buf);
         }
 
-        public void QueueNext(GaplessRequest request) => Publish(CommandId.QueueNext, request.Write());
+        public async Task<bool> QueueNextAsync(GaplessRequest request)
+        {
+            byte[] reply = new byte[16];
+            var (type, length) = await SendWithResponseAsync(CommandId.QueueNext, request.Write(), reply);
+            return type == MessageTypeId.Success && length == reply.Length
+                && System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(reply.AsSpan(8)) == request.Epoch;
+        }
 
         /// <summary>Cancellation may race a render boundary. Return the committed identity so the UI
         /// can still show a track that was already audible before cancellation reached the engine.</summary>

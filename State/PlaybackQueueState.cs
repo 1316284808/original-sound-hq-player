@@ -19,6 +19,14 @@ public sealed class PlaybackQueueState : ObservableObject
     private long _currentEntryId;
     private bool _mutating;
     public long CurrentEntryId => _currentEntryId;
+    /// <summary>Published after a complete order mutation, once per bulk operation.</summary>
+    public long Version { get; private set; }
+
+    private void CommitOrderChange()
+    {
+        Version++;
+        OnPropertyChanged(nameof(Version));
+    }
     public PlaybackQueueState()
     {
         Playing = Sequential;
@@ -113,12 +121,17 @@ public sealed class PlaybackQueueState : ObservableObject
             foreach (var entry in _entries) if (remaining.Contains(entry.Id)) _order.Add(entry);
             PublishOrder();
         }
-        else _order = new(_entries);
+        else
+        {
+            _order = new(_entries);
+            CommitOrderChange();
+        }
     }
     private void PublishOrder()
     {
         Playing = Mode == PlayMode.RandomLoop ? new(_order.Select(entry => entry.Music)) : Sequential;
         OnPropertyChanged(nameof(Playing));
+        CommitOrderChange();
     }
     public BulkObservableCollection<Music> Sequential { get; private set; } = [];
     public BulkObservableCollection<Music> Playing { get; private set; } = [];
@@ -199,5 +212,6 @@ public sealed class PlaybackQueueState : ObservableObject
             }
         }
         finally { _mutating = false; }
+        CommitOrderChange();
     }
 }

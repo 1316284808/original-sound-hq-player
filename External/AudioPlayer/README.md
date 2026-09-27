@@ -41,6 +41,8 @@ AudioPlayer.exe（NativeAOT 单文件，win-x64）
 │   └── WavPackDsdReader.cs   libwavpack 原始 DSD 解压、64 位 seek、MSB 交织字节
 ├── Playback/
 │   ├── PlaybackEngine.cs     引擎：会话生命周期、输出模式、看门狗自愈、独占换曲复用
+│   ├── GaplessPreloader.cs   单个预载/清理工作任务，待处理计划只保留最新一项
+│   ├── GaplessSource.cs      稳定输出音源，在 PCM 帧边界衔接兼容会话
 │   ├── Session.cs            播放会话：解码线程 + 环形缓冲 + EQ/增益（IRenderSource）
 │   ├── Ring.cs               SPSC 帧环（会话代数防 seek 串音；PcmRing/DopRing/DsdByteRing）
 │   ├── Dsp.cs                十段峰值 EQ（RBJ，全 double）+ 采样精确增益斜坡
@@ -60,6 +62,14 @@ AudioPlayer.exe（NativeAOT 单文件，win-x64）
 ```
 
 ## 音频管线
+
+无缝播放分为计划、准备、渲染三个阶段。UI 按队列版本缓存候选；已确认的计划不定时重发，
+输出代数或时间线变化时重新提交，失败有界退避。取消回执确认旧曲目是否已经提交后，才发新计划。
+引擎只在剩余实际播放时间不超过 10 秒时打开下一曲，未知时长则提前准备；文件探测均在工作任务中。
+普通 DSP、设备校正和试听参数同步应用于当前/待播会话，不重建待播解码器；倍速变化、seek、
+暂停、输出重建和关闭无缝仍取消准备。预载任务在成功发布前拥有新会话，迟到结果由该任务释放；
+退出停止接收计划并等待收尾，若原生打开超时，所有权仍留在任务内直到其返回。
+音频回调只衔接音源，不打开文件或释放会话；PCM 环容量与 float64 格式保持不变。
 
 **全程 float64**：解码（swr `AV_SAMPLE_FMT_DBL`）→ `PcmRing`（double 交织）→
 EQ/音量/淡入淡出（double 域）→ 出口按设备格式转换（float32/16/24/32 整型、

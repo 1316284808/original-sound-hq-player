@@ -41,6 +41,8 @@ AudioPlayer.exe (NativeAOT single file, win-x64)
 ├── Playback/
 │   ├── PlaybackEngine.cs     Engine: session lifecycle, output mode, watchdog recovery,
 │   │                         exclusive track-switch reuse
+│   ├── GaplessPreloader.cs   One preparation/cleanup worker with one replaceable pending request
+│   ├── GaplessSource.cs      Stable output source, splicing compatible sessions at a PCM frame boundary
 │   ├── Session.cs            Playback session: decode thread + ring buffer + EQ/gain
 │   │                         (IRenderSource)
 │   ├── Ring.cs               SPSC frame rings (session epoch guards against seek cross-talk;
@@ -58,6 +60,16 @@ AudioPlayer.exe (NativeAOT single file, win-x64)
 ```
 
 ## Audio Pipeline
+
+Gapless playback separates planning, preparation, and rendering. The UI caches its candidate by queue
+version and stops resending an acknowledged plan. Output/timeline changes invalidate it; failures retry
+with backoff. An ordered cancellation reply reconciles an already committed transition before replacement.
+The engine opens the next decoder within the last 10 seconds of wall-clock playback, or immediately for
+unknown duration. File probing stays on the worker. Ordinary DSP, correction, and preview updates target
+both sessions without reopening the pending decoder. Rate changes, seeking, pausing, output rebuilds,
+and disabling gapless still cancel preparation. The worker owns an unpublished session and disposes late
+results. Shutdown stops new plans and awaits cleanup; a timed-out native open retains its owner until it
+returns. The audio callback only splices sources. PCM ring capacity and float64 storage are unchanged.
 
 **Full float64** end to end: decode (swr `AV_SAMPLE_FMT_DBL`) → `PcmRing`
 (double interleaved) → EQ/volume/fade-in-out (double domain) → per-device

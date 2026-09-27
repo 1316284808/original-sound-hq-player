@@ -57,6 +57,8 @@ public class PlayerIpcService : IDisposable
         finally
         {
             _stop.Cancel();
+            if (_engine is not null)
+                await ObserveShutdownAsync(_engine.StopGaplessAsync().WaitAsync(TimeSpan.FromMilliseconds(1500))).ConfigureAwait(false);
             if (_engine is not null) await ObserveShutdownAsync(_engine.StopStreamingAsync()).ConfigureAwait(false);
             await ObserveShutdownAsync(Task.WhenAll(commands, streaming, state, progress, monitor)).ConfigureAwait(false);
             ReleaseResources();
@@ -209,7 +211,11 @@ public class PlayerIpcService : IDisposable
                 }
                 case CommandId.QueueNext:
                 {
-                    _engine!.QueueNext(GaplessRequest.Read(payload));
+                    if (!_engine!.TryQueueNext(GaplessRequest.Read(payload)))
+                    {
+                        WriteEmptyResponse(MessageTypeId.Failed);
+                        break;
+                    }
                     var identity = _engine.GetGaplessIdentity();
                     Span<byte> reply = stackalloc byte[16];
                     System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(reply, identity.Token);

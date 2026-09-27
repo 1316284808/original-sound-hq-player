@@ -58,7 +58,7 @@ namespace WinUIMusicPlayer.Model
 {
     public sealed class Music(int id, int source = 0) : CommunityToolkit.Mvvm.ComponentModel.ObservableObject
     {
-        public string Path => source == 0 ? System.IO.Path.GetFullPath($"track-{id}.wav") : $"webdav://{source}/dav/tone.flac";
+        public string Path { get; set => SetProperty(ref field, value); } = source == 0 ? System.IO.Path.GetFullPath($"track-{id}.wav") : $"webdav://{source}/dav/tone.flac";
         public TimeSpan Duration { get; set; }
         public int Id => id;
         public int SourceId => source;
@@ -82,6 +82,21 @@ namespace WinUIMusicPlayer.Model
         public string BaseUri => "http://127.0.0.1/dav/";
     }
     public sealed class WebDavCacheSettings { public bool Enabled { get; set; } public int LimitGiB { get; set; } = 10; }
+    #if !REAL_WINUI
+    public sealed class BulkObservableCollection<T> : System.Collections.ObjectModel.ObservableCollection<T>
+    {
+        public BulkObservableCollection() { }
+        public BulkObservableCollection(IEnumerable<T> items) : base(items) { }
+        public void AddRange(IEnumerable<T> items) => InsertRange(Count, items);
+        public void InsertRange(int index, IEnumerable<T> items)
+        {
+            foreach (var item in items) Items.Insert(index++, item);
+            OnPropertyChanged(new(nameof(Count)));
+            OnPropertyChanged(new("Item[]"));
+            OnCollectionChanged(new(System.Collections.Specialized.NotifyCollectionChangedAction.Reset));
+        }
+    }
+    #endif
     public static class AppSettings
     {
         public static string MusicCoverCache { get; set; } = Path.GetTempPath();
@@ -90,6 +105,7 @@ namespace WinUIMusicPlayer.Model
     }
 }
 namespace WinUIMusicPlayer.Utils { public static class ToolUtils { public enum PlayMode { SingleLoop, ListLoop, RandomLoop, RepeatOff } public static string GetString(string key) => key; } }
+namespace WinUIMusicPlayer.Extensions { }
 namespace WinUIMusicPlayer.Helper
 {
     public static class DialogHelper { public static Task<bool> ShowConfirmAsync(object root, string titleKey) => Task.FromResult(true); }
@@ -105,15 +121,30 @@ namespace WinUIMusicPlayer.ViewModel
 {
     public sealed class AppViewModel : CommunityToolkit.Mvvm.ComponentModel.ObservableObject
     {
+        public AppViewModel()
+        {
+            State.Queue.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(State.Queue.Playing)) OnPropertyChanged(nameof(CurrentPlayingList));
+                if (e.PropertyName == nameof(State.Queue.Mode)) OnPropertyChanged(nameof(CurrentPlayMode));
+            };
+        }
         public bool CanPublishState => CanStartPlayback;
         public bool IsPlaybackEngineReady => true;
         public bool CanStartPlayback { get; set; } = true;
-        public System.Collections.ObjectModel.ObservableCollection<Music> CurrentPlayingList { get; set; } = [];
-        public WinUIMusicPlayer.Utils.ToolUtils.PlayMode CurrentPlayMode { get; set => SetProperty(ref field, value); } = WinUIMusicPlayer.Utils.ToolUtils.PlayMode.ListLoop;
+        public BulkObservableCollection<Music> CurrentPlayingList { get => State.Queue.Playing; set => State.Queue.Replace(value); }
+        public WinUIMusicPlayer.Utils.ToolUtils.PlayMode CurrentPlayMode { get => State.Queue.Mode; set => State.Queue.Mode = value; }
         public Music? CurrentPlayingMusic { get; set => SetProperty(ref field, value); }
         public Music? SelectedPlaybackMusic => State.Playback.PendingSelection?.Music ?? CurrentPlayingMusic;
-        public int GetSelectedPlaybackIndex() => State.Playback.PendingSelection is { } pending ? (int)pending.EntryId - 1 : GetCurrentIndex();
-        public int GetCurrentIndex() => CurrentPlayingList.IndexOf(CurrentPlayingMusic!);
+        public int GetSelectedPlaybackIndex()
+        {
+            if (State.Playback.PendingSelection is { } pending)
+                for (int i = 0; i < CurrentPlayingList.Count; i++)
+                    if (State.Queue.EntryIdAt(i) == pending.EntryId) return i;
+            return GetCurrentIndex();
+        }
+        public int CurrentIndexLookups;
+        public int GetCurrentIndex() { CurrentIndexLookups++; return State.Queue.IndexOf(CurrentPlayingMusic); }
         public bool IsPlaying { get; set => SetProperty(ref field, value); }
         public double ProgressSlider { get; set; }
         public double ProgressSliderMax { get; set; }
@@ -135,7 +166,7 @@ namespace WinUIMusicPlayer.ViewModel
     {
         public ShellState Shell { get; } = new();
         public WinUIMusicPlayer.State.PlaybackState Playback { get; } = new();
-        public QueueState Queue { get; } = new();
+        public WinUIMusicPlayer.State.PlaybackQueueState Queue { get; } = new();
         public BrowseState Browse { get; } = new();
         public PreferencesState Preferences { get; } = new();
     }
@@ -143,14 +174,6 @@ namespace WinUIMusicPlayer.ViewModel
     public sealed class PreferencesState : CommunityToolkit.Mvvm.ComponentModel.ObservableObject
     {
         public string MusicCoverCache { get; set => SetProperty(ref field, value); } = Path.GetTempPath();
-    }
-    public sealed class QueueState
-    {
-        public Func<Music, int> FindIndex { get; set; } = _ => -1;
-        public int IndexOf(Music music) => FindIndex(music);
-        public long CurrentEntryId { get; set; }
-        public long EntryIdAt(int index) => index < 0 ? 0 : index + 1;
-        public void SelectEntry(long id, Music music) => CurrentEntryId = id != 0 ? id : EntryIdAt(IndexOf(music));
     }
 }
 #if !REAL_REMOTE
@@ -196,11 +219,28 @@ namespace WinUIMusicPlayer.Services
         public BassPlayerIpc.Shared.ProgressSnapshot? Progress;
         public List<BassPlayerIpc.Shared.GaplessRequest> Queued { get; } = [];
         public event Action<BassPlayerIpc.Shared.MessageTypeId, ReadOnlyMemory<byte>>? NotificationReceived;
+        public event Action? DspStateChanged;
+        public BassPlayerIpc.Shared.DspStateSnapshot? CurrentDspState { get; private set; }
+        public Func<Task<bool>>? QueueReply;
+        public Func<Task<long>>? CancelReply;
+        public void RebuildOutput(long generation)
+        {
+            CurrentDspState = new(generation, new BassPlayerIpc.Shared.DspState(0, false, 2, 0, 0, 0, true)
+                { OutputGeneration = generation });
+            DspStateChanged?.Invoke();
+        }
         public bool TryGetProgressSnapshot(out BassPlayerIpc.Shared.ProgressSnapshot snapshot) { snapshot = Progress ?? default; return Progress.HasValue; }
-        public void QueueNext(BassPlayerIpc.Shared.GaplessRequest request) => Queued.Add(request);
+        public async Task<bool> QueueNextAsync(BassPlayerIpc.Shared.GaplessRequest request)
+        {
+            Queued.Add(request);
+            if (QueueReply != null) return await QueueReply();
+            await Task.Yield();
+            return true;
+        }
         public async Task<long> CancelQueuedNextAsync()
         {
             Queued.Add(new(0, 0, ""));
+            if (CancelReply != null) return await CancelReply();
             long token = Progress?.GaplessToken ?? 0;
             await Task.Yield();
             return token;

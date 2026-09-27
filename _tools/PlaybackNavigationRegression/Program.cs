@@ -351,6 +351,12 @@ internal static class Regression
         test.State.IsPlaying = true;
         var queued = test.Ipc.Queued.Last();
         Check(queued.Path == second.Path && queued.Token > 0, "gapless preloads the actual next queue entry");
+        await Task.Yield();
+        int confirmedSends = test.Ipc.Queued.Count;
+        int lookups = test.State.CurrentIndexLookups;
+        await Task.Delay(1100);
+        Check(test.Ipc.Queued.Count == confirmedSends && test.State.CurrentIndexLookups == lookups,
+            "unchanged queue ticks neither rescan entries nor resend a confirmed plan");
         int presentations = 0;
         test.Coordinator.TrackStarted += (_, _) =>
         {
@@ -373,10 +379,12 @@ internal static class Regression
         await Task.Delay(20);
         Check(test.State.CurrentPlayingMusic == second, "removed queue entry cannot steal selection");
         test.State.CurrentPlayMode = WinUIMusicPlayer.Utils.ToolUtils.PlayMode.SingleLoop;
+        await WaitAsync(() => test.Ipc.Queued.Last().Path == second.Path);
         Check(test.Ipc.Queued.Last().Path == second.Path, "single loop preloads the current track");
         test.State.CurrentPlayMode = WinUIMusicPlayer.Utils.ToolUtils.PlayMode.RepeatOff;
         Check(test.Ipc.Queued.Last().Path.Length == 0, "repeat off clears preload");
         test.State.CurrentPlayMode = WinUIMusicPlayer.Utils.ToolUtils.PlayMode.ListLoop;
+        await WaitAsync(() => test.Ipc.Queued.Last().Path.Length > 0);
         var stale = test.Ipc.Queued.Last();
         await test.Coordinator.PlayAtAsync(0);
         await Task.Run(() => test.Ipc.Transition(stale.Token, 13));
@@ -399,6 +407,125 @@ internal static class Regression
         Check(race.State.CurrentPlayingMusic == second && race.Player.Played.Count == 1,
             "cancellation acknowledgement reconciles a transition already committed by the audio thread");
 
+        using var batch = new Scenario();
+        batch.State.CurrentPlayingList = [first, second, third];
+        batch.Ipc.Progress = new(1, 30, 0, 60000, 0, true);
+        await batch.Coordinator.PlayAtAsync(0);
+        batch.State.IsPlaying = true;
+        await Task.Yield();
+        long version = batch.State.State.Queue.Version;
+        int scans = batch.State.CurrentIndexLookups;
+        batch.State.State.Queue.InsertNext(first, [third, second]);
+        await WaitAsync(() => batch.Ipc.Queued.Last().Path.Length > 0);
+        Check(batch.State.State.Queue.Version == version + 1 && batch.State.CurrentIndexLookups == scans + 1,
+            "bulk insertion commits one queue version and resolves the candidate once");
+        Check(batch.Ipc.Queued.Last().Path == third.Path, "bulk mutation uses the completed queue order");
+        third.Path += ".renamed";
+        await WaitAsync(() => batch.Ipc.Queued.Last().Path.Length > 0);
+        Check(batch.Ipc.Queued.Last().Path == third.Path, "candidate path mutation invalidates its immutable plan");
+        batch.State.CurrentPlayMode = WinUIMusicPlayer.Utils.ToolUtils.PlayMode.RandomLoop;
+        await WaitAsync(() => batch.Ipc.Queued.Last().Path.Length > 0);
+        int nextIndex = PlaybackCommands.FindCandidateIndex(batch.State.CurrentPlayingList, batch.State.GetCurrentIndex(), 1);
+        Check(batch.Ipc.Queued.Last().Path == batch.State.CurrentPlayingList[nextIndex].Path,
+            "random mode resolves after rebuilding the real queue order");
+
+        using var late = new Scenario();
+        late.State.CurrentPlayingList = [first, second];
+        late.Ipc.Progress = new(1, 40, 0, 60000, 0, true);
+        var oldReply = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        late.Ipc.QueueReply = () => oldReply.Task;
+        await late.Coordinator.PlayAtAsync(0);
+        late.State.IsPlaying = true;
+        late.Ipc.QueueReply = () => Task.FromResult(true);
+        await Task.Run(() => late.Ipc.RebuildOutput(1));
+        await Task.Delay(30);
+        int rebuiltSends = late.Ipc.Queued.Count;
+        oldReply.SetResult(false);
+        await Task.Delay(1200);
+        Check(late.Ipc.Queued.Count == rebuiltSends && rebuiltSends == 3,
+            "output generation resubmits once and a late old failure cannot invalidate the new acknowledgement");
+
+        using var retry = new Scenario();
+        retry.State.CurrentPlayingList = [first, second];
+        retry.Ipc.Progress = new(1, 50, 0, 60000, 0, true);
+        int attempts = 0;
+        retry.Ipc.QueueReply = async () => { await Task.Yield(); return ++attempts > 1; };
+        await retry.Coordinator.PlayAtAsync(0);
+        retry.State.IsPlaying = true;
+        await Task.Delay(1700);
+        Check(attempts == 2, "rejected queue plan retries with backoff then stops after acknowledgement");
+        int retryScans = retry.State.CurrentIndexLookups;
+        await Task.Delay(1100);
+        Check(attempts == 2 && retry.State.CurrentIndexLookups == retryScans, "retry does not turn into permanent polling work");
+
+        using var duplicates = new Scenario();
+        duplicates.State.CurrentPlayingList = [first, first, second];
+        duplicates.Ipc.Progress = new(1, 60, 0, 60000, 0, true);
+        await duplicates.Coordinator.PlayAtAsync(0);
+        duplicates.State.IsPlaying = true;
+        var duplicatePlan = duplicates.Ipc.Queued.Last();
+        duplicates.Ipc.Progress = new(2, 61, 0, 60000, 0, true, 0, 1, duplicatePlan.Token);
+        await Task.Run(() => duplicates.Ipc.Transition(duplicatePlan.Token, 61));
+        await Task.Delay(30);
+        Check(duplicates.State.State.Queue.CurrentEntryId == duplicates.State.State.Queue.EntryIdAt(1)
+            && duplicates.Ipc.Queued.Last().Path == second.Path, "duplicate music keeps entry identity across gapless adoption");
+
+        using var cancelling = new Scenario();
+        cancelling.State.CurrentPlayingList = [first, second, third];
+        cancelling.Ipc.Progress = new(1, 70, 0, 60000, 0, true);
+        await cancelling.Coordinator.PlayAtAsync(0);
+        cancelling.State.IsPlaying = true;
+        var cancellingPlan = cancelling.Ipc.Queued.Last();
+        var cancelReply = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+        cancelling.Ipc.CancelReply = () => cancelReply.Task;
+        cancelling.State.State.Queue.InsertNext(first, [third]);
+        await Task.Delay(550);
+        Check(cancelling.Ipc.Queued.Count == 2 && cancelling.Ipc.Queued.Last().Path.Length == 0,
+            "replacement waits for cancellation identity instead of overwriting an already audible plan");
+        cancelling.Ipc.Progress = new(2, 71, 0, 60000, 0, true, 0, 1, cancellingPlan.Token);
+        await Task.Run(() => cancelling.Ipc.Transition(cancellingPlan.Token, 71));
+        await Task.Delay(20);
+        Check(cancelling.State.CurrentPlayingMusic == first && cancelling.Ipc.Queued.Count == 2,
+            "transition while cancelling waits for the authoritative ordered reply");
+        cancelReply.SetResult(cancellingPlan.Token);
+        await WaitAsync(() => cancelling.Ipc.Queued.Count == 3);
+        Check(cancelling.State.CurrentPlayingMusic == second && cancelling.Ipc.Queued.Last().Path == third.Path && cancelling.Player.Played.Count == 1,
+            "late cancellation acknowledgement prepares from the adopted track without replaying it");
+
+        using var cancelRetry = new Scenario();
+        cancelRetry.State.CurrentPlayingList = [first, second, third];
+        cancelRetry.Ipc.Progress = new(1, 80, 0, 60000, 0, true);
+        await cancelRetry.Coordinator.PlayAtAsync(0);
+        cancelRetry.State.IsPlaying = true;
+        long retryToken = cancelRetry.Ipc.Queued.Last().Token;
+        int cancellations = 0;
+        cancelRetry.Ipc.CancelReply = async () =>
+        {
+            await Task.Yield();
+            if (++cancellations == 1) throw new TimeoutException("lost cancellation acknowledgement");
+            cancelRetry.Ipc.Progress = new(2, 81, 0, 60000, 0, true, 0, 1, retryToken);
+            return retryToken;
+        };
+        cancelRetry.State.State.Queue.InsertNext(first, [third]);
+        await WaitAsync(() => cancelRetry.State.CurrentPlayingMusic == second);
+        Check(cancellations == 2 && cancelRetry.Ipc.Queued.Count == 4 && cancelRetry.Ipc.Queued.Last().Path == third.Path,
+            "failed cancellation retains its identity and retries with backoff before submitting the replacement");
+
+        using var immediate = new Scenario();
+        var remote = new Music(104, 10);
+        immediate.State.CurrentPlayingList = [first, second, remote];
+        immediate.Ipc.Progress = new(1, 90, 0, 60000, 0, true);
+        await immediate.Coordinator.PlayAtAsync(0);
+        immediate.State.IsPlaying = true;
+        immediate.Ipc.CancelReply = () => Task.FromResult(0L);
+        var finishProbe = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        immediate.Library.Probe = (_, token) => finishProbe.Task.WaitAsync(token);
+        Task explicitSelection = immediate.Coordinator.PlayAsync(remote);
+        await WaitAsync(() => immediate.Library.Probes.Count > 0);
+        Check(immediate.Ipc.Queued.Count == 2 && immediate.State.State.Playback.PendingSelection?.Music == remote,
+            "synchronous cancellation completion cannot preload over a new explicit selection");
+        finishProbe.SetResult(true);
+        await explicitSelection;
     }
 
     static void Check(bool value, string message) { if (!value) throw new Exception(message); Console.WriteLine("PASS: " + message); }
@@ -415,7 +542,6 @@ sealed class Scenario : IDisposable
     public Scenario()
     {
         Player.State = State;
-        State.State.Queue.FindIndex = music => State.CurrentPlayingList.IndexOf(music);
         Coordinator = new(State, Player, new(), new ApplicationTasks(Lifecycle),
             new ShutdownCoordinator(Lifecycle, NullLogger<ShutdownCoordinator>.Instance), NullLogger<PlaybackCoordinator>.Instance, Remote, Library, Ipc);
     }

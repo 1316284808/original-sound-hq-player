@@ -1,5 +1,10 @@
 # Playback switch regressions
 
+`GaplessLifecycleTests` 覆盖按倍速折算的 10 秒准备窗口、未知时长、seek 离开窗口、关闭功能、
+DSP/校正/试听保留待播解码器和 PCM 环，以及不可即时取消的打开操作、只保留最新计划和退出收尾。
+`--test-playback-effects` 同时运行真实 FFmpeg 重采样器初始化失败释放检查。
+`--measure-playback-memory` 单独测量暖机后的倍速/压限循环分配；这不代表整个播放进程零分配。
+
 `PipeProtocolTests` 覆盖部分读取/连续帧、非法帧、握手失败、256 KiB 配置、取消/超时后的缓冲所有权、断开、队列上限、状态合并与关键事件保序。`--test-pipe` 同时执行跨进程真实命令处理及 Settings/EQ/DSP 顺序验证。
 
 `AtmosTests` 验证实验性 E-AC-3/JOC HDMI 直通：与 FFmpeg spdif 基准字节一致、

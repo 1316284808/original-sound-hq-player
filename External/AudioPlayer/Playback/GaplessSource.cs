@@ -20,6 +20,11 @@ internal sealed class GaplessSource(Session current) : IRenderSource
     public uint ChannelMask => _channelMask;
     public long SubmittedFrames => Interlocked.Read(ref _submitted);
 
+    internal (Session Current, Session? Pending, long CompletedToken) Snapshot()
+    {
+        lock (_gate) return (_current, _next, _completedToken);
+    }
+
     internal bool Queue(Session next, long token)
     {
         lock (_gate)

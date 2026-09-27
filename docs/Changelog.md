@@ -2,6 +2,15 @@
 
 新条目加在最上方。
 
+## 2026-09-27 修复 1.2.9.0 以来审查问题并优化无缝预载
+
+- `PlaybackEngine.Gapless.cs`、`GaplessPreloader.cs`：按剩余实际播放时间 10 秒延迟创建待播会话，未知时长提前准备；单个工作任务合并过期计划，统一迟到会话与退出清理，PCM 环容量不变。
+- `PlaybackEngine.cs`：普通 DSP、设备校正及试听更新当前与待播会话，避免重复销毁/解码/分配；倍速、seek、暂停、输出重建及关闭无缝仍使准备失效。
+- `PlaybackQueueState.cs`、`PlaybackCoordinator.Gapless.cs`、IPC：队列版本缓存候选，已确认计划不轮询重发；提交失败退避，取消回执确认曲目身份后再替换，保护手动选曲及迟到通知。
+- `FFmpegAudioConverter.cs`：重采样器重建失败释放新原生上下文；`WebDavRegression.csproj` 改用完整共享 IPC 项目，修复回归工具缺失依赖。
+- `TempoProcessor.cs`：明确输入帧、输出帧及搜索窗口命名；`Player/AudioPlayer.exe` 同步 NativeAOT 产物，存量偏好保持不变。
+- 验证：317/317 播放回归、导航/远程/WebDAV TLS 回归、真实 WinUI 调度及主程序构建；NativeAOT 在真实 WASAPI 共享输出通过 0.25× / 5× 无缝衔接、暂停恢复与退出。未实测 ASIO/独占硬件及完整主界面交互。
+
 ## 2026-09-27 修复展开图片背景设置时闪退
 
 - `GeneralSettingsControl.xaml`：将背景错误 InfoBar 移到 SettingsExpander.Items 外，避免展开时应用 SettingsCard 样式导致 COMException；无错误时隐藏提示。

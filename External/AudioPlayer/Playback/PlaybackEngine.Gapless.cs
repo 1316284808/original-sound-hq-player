@@ -4,12 +4,11 @@ namespace AudioPlayer.Playback;
 
 public sealed partial class PlaybackEngine
 {
+    private const double GaplessLeadTimeMs = 10_000;
     private GaplessSource? _gaplessSource;
-    private GaplessRequest? _gaplessRequest;
-    private CancellationTokenSource? _gaplessCancellation;
-    private SemaphoreSlim? _gaplessOpenGate;
-    private Task? _gaplessWork;
-    private long _gaplessGeneration, _currentGaplessToken;
+    private GaplessPreloader? _gaplessPreloader;
+    private long _currentGaplessToken;
+    private bool _gaplessStopping;
 
     private double EffectivePlaybackRate => _dspSettings is { IsEnabled: true } dsp ? dsp.PlaybackRate : 1;
 
@@ -24,18 +23,14 @@ public sealed partial class PlaybackEngine
         return _gaplessSource;
     }
 
-    // Called with the stream lock. Cancellation removes only a future source, never the audible one.
+    // Stream lock -> render gate, never the reverse. Detach drains an in-flight splice;
+    // adoption must precede invalidating its plan so a committed track keeps its identity.
     private void CancelGapless()
     {
-        ++_gaplessGeneration;
-        _gaplessCancellation?.Cancel();
-        _gaplessCancellation = null; // worker owns disposal
         var cancelled = _gaplessSource?.Cancel();
-        // Cancel drains an in-flight splice. Adopt before clearing its identity, including a
-        // transition that happened after the caller's initial SynchronizeGapless check.
         AdoptGapless();
-        cancelled?.Dispose();
-        _gaplessRequest = null;
+        _gaplessPreloader?.Cancel();
+        RetireGaplessSession(cancelled);
     }
 
     public void SynchronizeGapless()
@@ -54,79 +49,115 @@ public sealed partial class PlaybackEngine
 
     private void AdoptGapless()
     {
-        if (_gaplessSource is not { } source || source.Current == _session || source.CompletedToken == 0) return;
+        if (_gaplessSource is not { } source) return;
+        var rendered = source.Snapshot();
+        if (rendered.Current == _session || rendered.CompletedToken == 0) return;
         var old = _session;
-        var request = _gaplessRequest;
-        SetSession(source.Current);
-        if (request != null)
+        var request = _gaplessPreloader?.Request;
+        SetSession(rendered.Current);
+        if (request != null && request.Token == rendered.CompletedToken)
         {
             MusicUrl = request.Path;
             _currentGaplessToken = request.Token;
             _lastProgressSeekId = 0;
-            _ipc?.GaplessTransition(request.Token, source.Current.TimelineEpoch);
+            _ipc?.GaplessTransition(request.Token, rendered.Current.TimelineEpoch);
         }
-        _gaplessRequest = null;
-        old?.Dispose();
+        _gaplessPreloader?.Cancel();
+        RetireGaplessSession(old);
     }
 
-    public void QueueNext(GaplessRequest request)
+    private void RetireGaplessSession(Session? session)
+    {
+        if (session == null) return;
+        if (_gaplessPreloader != null) _gaplessPreloader.Retire(session);
+        else session.Dispose();
+    }
+
+    public void QueueNext(GaplessRequest request) => TryQueueNext(request);
+
+    // Acknowledgement accepts a lightweight plan, not an already opened decoder.
+    public bool TryQueueNext(GaplessRequest request)
     {
         lock (_streamLock)
         {
             AdoptGapless();
-            if (request.Epoch != 0 && request.Epoch != _session?.TimelineEpoch) return;
-            // Keep failed/incompatible attempts too: polling the same plan must not reopen the file every second.
-            if (request == _gaplessRequest) return;
+            if (Volatile.Read(ref _disposed) != 0 || _gaplessStopping) return false;
+            if (request.Path.Length == 0) { CancelGapless(); return true; }
+            if (request.Epoch != _session?.TimelineEpoch) return false;
+            if (request == _gaplessPreloader?.Request) return true;
             CancelGapless();
-            if (!IsPlaying || request.Path.Length == 0 || Volatile.Read(ref _disposed) != 0
-                || _dspSettings?.GaplessPlayback != true || _session is not { Kind: RenderKind.Pcm } current
-                || _gaplessSource == null || ExperimentalAtmosPassthrough || IsBitstreamActive(request.Path)
-                || _currentStream != Guid.Empty || !Path.IsPathFullyQualified(request.Path)) return;
-            var cancel = new CancellationTokenSource();
-            _gaplessCancellation = cancel;
-            _gaplessRequest = request;
-            var gate = _gaplessOpenGate ??= new(1, 1);
-            var source = _gaplessSource;
-            long generation = _gaplessGeneration;
-            int dsdRate = DsdPcmFreq, dsdGain = DsdGain, latency = Latency;
-            bool surround = ExperimentalSurround51;
-            double rate = EffectivePlaybackRate;
-            _gaplessWork = Task.Run(async () =>
-            {
-                Session? next = null;
-                bool entered = false;
-                try
-                {
-                    await gate.WaitAsync(cancel.Token).ConfigureAwait(false);
-                    entered = true;
-                    cancel.Token.ThrowIfCancellationRequested();
-                    next = Session.Open(this, request.Path, RenderKind.Pcm, dsdRate, dsdGain, latency,
-                        maxChannels: current.Channels <= 2 ? 2 : null, experimentalSurround51: surround,
-                        cancellationToken: cancel.Token, playbackRate: rate);
-                    lock (_streamLock)
-                    {
-                        if (next == null || cancel.IsCancellationRequested || generation != _gaplessGeneration
-                            || Volatile.Read(ref _disposed) != 0 || _session != current || _gaplessSource != source) return;
-                        next.ConfigureDsp(ResolveDsp(_output?.DeviceId));
-                        next.Eq.Configure(next.SampleRate, IsEqualizerEnabled, EqGains, EqQ);
-                        next.Gain?.SetImmediately(GainVolumeTarget);
-                        if (!source.Queue(next, request.Token)) return;
-                        next = null; // ownership transferred to the engine
-                    }
-                }
-                catch (OperationCanceledException) when (cancel.IsCancellationRequested) { }
-                catch (Exception ex) { Console.WriteLine($"[gapless] preload failed: {ex.Message}"); }
-                finally
-                {
-                    next?.Dispose();
-                    if (entered) gate.Release();
-                    lock (_streamLock)
-                    {
-                        if (ReferenceEquals(_gaplessCancellation, cancel)) _gaplessCancellation = null;
-                        cancel.Dispose();
-                    }
-                }
-            });
+            if (!IsPlaying || _dspSettings?.GaplessPlayback != true
+                || _session is not { Kind: RenderKind.Pcm } || _gaplessSource == null
+                || ExperimentalAtmosPassthrough || _currentStream != Guid.Empty
+                || !Path.IsPathFullyQualified(request.Path)) return false;
+            _gaplessPreloader ??= new(_streamLock, OpenGaplessSession, PublishGaplessSession);
+            _gaplessPreloader.SetPlan(request);
+            PrepareGaplessIfDue();
+            return true;
+        }
+    }
+
+    // Called by the existing control watchdog. No file probes or allocations outside the window.
+    private void PrepareGaplessIfDue()
+    {
+        lock (_streamLock)
+        {
+            AdoptGapless();
+            if (Volatile.Read(ref _disposed) != 0 || _gaplessStopping || !IsPlaying || _dspSettings?.GaplessPlayback != true
+                || _gaplessPreloader is not { State: GaplessPreparationState.Waiting, Request: { } request } preloader
+                || _session is not { Kind: RenderKind.Pcm } current || _gaplessSource is not { } source) return;
+            if (request.Epoch != current.TimelineEpoch) { CancelGapless(); return; }
+            var (position, duration) = GetTimeProgress();
+            if (duration > 0 && (duration - position) / current.PlaybackRate > GaplessLeadTimeMs) return;
+            preloader.Start(new(request, current, source, DsdPcmFreq, DsdGain, Latency,
+                ExperimentalSurround51, EffectivePlaybackRate, IsDopEnabled && !IsSharedMode(OutputMode)));
+        }
+    }
+
+    private Session? OpenGaplessSession(GaplessPreparation preparation, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (preparation.BitstreamEnabled && IsRawDsdContainer(preparation.Request.Path)) return null;
+        // Decoder probing belongs on this worker, including local files on slow UNC paths.
+        return Session.Open(this, preparation.Request.Path, RenderKind.Pcm,
+            preparation.DsdRate, preparation.DsdGain, preparation.Latency,
+            maxChannels: preparation.Current.Channels <= 2 ? 2 : null,
+            experimentalSurround51: preparation.Surround, cancellationToken: token,
+            playbackRate: preparation.PlaybackRate);
+    }
+
+    // Invoked by the preloader under the stream lock; no rendering/disposal can race ownership transfer.
+    private bool PublishGaplessSession(GaplessPreparation preparation, Session next)
+    {
+        if (Volatile.Read(ref _disposed) != 0 || _session != preparation.Current
+            || _gaplessSource != preparation.Source) return false;
+        next.ConfigureDsp(ResolveDsp(_output?.DeviceId));
+        next.Eq.Configure(next.SampleRate, IsEqualizerEnabled, EqGains, EqQ);
+        next.Gain?.SetImmediately(GainVolumeTarget);
+        return preparation.Source.Queue(next, preparation.Request.Token);
+    }
+
+    // Snapshot both borrowed references atomically with respect to a render-boundary splice.
+    // Stream lock prevents disposal while targets are published outside the render gate.
+    private void ApplyDspToSessions()
+    {
+        var settings = ResolveDsp(_output?.DeviceId);
+        if (_gaplessSource is { } source)
+        {
+            var rendered = source.Snapshot();
+            rendered.Current.ConfigureDsp(settings);
+            rendered.Pending?.ConfigureDsp(settings);
+        }
+        else _session?.ConfigureDsp(settings);
+    }
+
+    public Task StopGaplessAsync()
+    {
+        lock (_streamLock)
+        {
+            _gaplessStopping = true;
+            CancelGapless();
+            return _gaplessPreloader?.StopAsync() ?? Task.CompletedTask;
         }
     }
 }
