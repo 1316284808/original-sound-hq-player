@@ -2280,7 +2280,7 @@ SHA-256: {5}
     <value>再生速度</value>
   </data>
   <data name="DspPlaybackRateDescription" xml:space="preserve">
-    <value>音程を維持して 0.5～2 倍速で再生します。変更時は現在位置から再バッファーし、1 倍速では元のサンプルを保持します。 シークできないネットワークストリームは 1 倍速で再生します。</value>
+    <value>音程を維持して 0.25～5 倍速で再生します。変更時は現在位置から再バッファーし、1 倍速では元のサンプルを保持します。 シークできないネットワークストリームは 1 倍速で再生します。</value>
   </data>
   <data name="DspCompressor" xml:space="preserve">
     <value>コンプレッサー／リミッター</value>

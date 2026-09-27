@@ -2280,7 +2280,7 @@ SHA-256: {5}
     <value>Wiedergabegeschwindigkeit</value>
   </data>
   <data name="DspPlaybackRateDescription" xml:space="preserve">
-    <value>0,5–2× bei gleichbleibender Tonhöhe. Änderungen puffern ab der aktuellen Position neu; 1× erhält die Originalsamples. Netzwerkstreams ohne Suchfunktion bleiben bei 1×.</value>
+    <value>0,25–5× bei gleichbleibender Tonhöhe. Änderungen puffern ab der aktuellen Position neu; 1× erhält die Originalsamples. Netzwerkstreams ohne Suchfunktion bleiben bei 1×.</value>
   </data>
   <data name="DspCompressor" xml:space="preserve">
     <value>Kompressor / Limiter</value>

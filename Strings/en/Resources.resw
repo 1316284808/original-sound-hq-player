@@ -2280,7 +2280,7 @@ SHA-256: {5}
     <value>Playback speed</value>
   </data>
   <data name="DspPlaybackRateDescription" xml:space="preserve">
-    <value>0.5–2× with pitch preserved. Changes rebuffer at the current position; 1× preserves original samples. Non-seekable network streams stay at 1×.</value>
+    <value>0.25–5× with pitch preserved. Changes rebuffer at the current position; 1× preserves original samples. Non-seekable network streams stay at 1×.</value>
   </data>
   <data name="DspCompressor" xml:space="preserve">
     <value>Compressor / limiter</value>

@@ -197,7 +197,7 @@ public sealed class RemotePlaybackService(WebDavLibraryService library, WebDavTr
                         positionMs = Math.Max(positionMs, lastProgress.Progress.CurrentMs);
                     _snapshot = new(new ProgressSnapshot(0, -generation, positionMs, reply.DurationMs ?? 0,
                         Stopwatch.GetTimestamp(), reply.Phase == StreamPhase.Playing, reply.SeekId,
-                        double.IsFinite(reply.PlaybackRate) ? Math.Clamp(reply.PlaybackRate, 0.5, 2) : 1));
+                        double.IsFinite(reply.PlaybackRate) ? Math.Clamp(reply.PlaybackRate, 0.25, 5) : 1));
                 }
                 // Duration may arrive while the stream stays in Buffering; its timer is stopped then.
                 if (reply.DurationMs is > 0)

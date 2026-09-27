@@ -63,7 +63,7 @@ public sealed record DspSettings
         double balance = Finite(Balance, -1, 1, 0);
         double crossfeed = Finite(Crossfeed, 0, 0.5, 0);
         double width = Finite(StereoWidth, 0, 1.5, 1);
-        double rate = Finite(PlaybackRate, 0.5, 2, 1);
+        double rate = Finite(PlaybackRate, 0.25, 5, 1);
         double threshold = Finite(CompressorThresholdDb, -40, -3, -18);
         double ratio = Finite(CompressorRatio, 1, 20, 4);
         double makeup = Finite(CompressorMakeupDb, 0, 18, 6);

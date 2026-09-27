@@ -5,6 +5,8 @@ namespace WinUIMusicPlayer.ViewModel.Controls;
 
 public partial class DspSettingsViewModel
 {
+    private static readonly double[] PlaybackRates = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5];
+
     public bool GaplessPlayback
     {
         get => field;
@@ -23,8 +25,26 @@ public partial class DspSettingsViewModel
     public double PlaybackRate
     {
         get => field;
-        set { if (double.IsFinite(value) && SetProperty(ref field, value)) SettingChanged(LicenseFeature.None); }
+        set
+        {
+            if (!double.IsFinite(value) || !SetProperty(ref field, value)) return;
+            OnPropertyChanged(nameof(PlaybackRateIndex));
+            OnPropertyChanged(nameof(PlaybackRateText));
+            SettingChanged(LicenseFeature.None);
+        }
     }
+
+    public int PlaybackRateIndex
+    {
+        get => System.Array.IndexOf(PlaybackRates, PlaybackRate);
+        set
+        {
+            // A legacy custom rate has no selected item. Ignore selection clearing during binding updates.
+            if ((uint)value < (uint)PlaybackRates.Length) PlaybackRate = PlaybackRates[value];
+        }
+    }
+
+    public string PlaybackRateText => PlaybackRate.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "×";
 
     public bool CompressorEnabled
     {

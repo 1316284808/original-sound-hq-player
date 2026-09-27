@@ -44,9 +44,20 @@
                 <controls:SettingsCard Header="{x:Bind tool:ToolUtils.GetString('DspPlaybackRate')}"
                     Description="{x:Bind tool:ToolUtils.GetString('DspPlaybackRateDescription')}"
                     IsEnabled="{x:Bind ViewModel.PlaybackRateEditable, Mode=OneWay}">
-                    <NumberBox Width="220" Minimum="0.5" Maximum="2" SmallChange="0.05" LargeChange="0.25"
-                        SpinButtonPlacementMode="Inline" Value="{x:Bind ViewModel.PlaybackRate, Mode=TwoWay}"
-                        AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('DspPlaybackRate')}" />
+                    <ComboBox Width="220" IsEditable="False"
+                        SelectedIndex="{x:Bind ViewModel.PlaybackRateIndex, Mode=TwoWay}"
+                        PlaceholderText="{x:Bind ViewModel.PlaybackRateText, Mode=OneWay}"
+                        AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('DspPlaybackRate')}">
+                        <ComboBoxItem Content="0.25×" />
+                        <ComboBoxItem Content="0.5×" />
+                        <ComboBoxItem Content="0.75×" />
+                        <ComboBoxItem Content="1×" />
+                        <ComboBoxItem Content="1.5×" />
+                        <ComboBoxItem Content="2×" />
+                        <ComboBoxItem Content="3×" />
+                        <ComboBoxItem Content="4×" />
+                        <ComboBoxItem Content="5×" />
+                    </ComboBox>
                 </controls:SettingsCard>
                 <controls:SettingsCard Header="{x:Bind tool:ToolUtils.GetString('DspCompressor')}"
                     Description="{x:Bind tool:ToolUtils.GetString('DspCompressorDescription')}"

@@ -25,7 +25,7 @@ public static class ProgressProtocol
     {
         if (bytes.Length != Size && bytes.Length != 56) throw new InvalidDataException("Invalid progress snapshot.");
         double rate = bytes.Length == Size ? BinaryPrimitives.ReadDoubleLittleEndian(bytes[56..]) : 1;
-        if (!double.IsFinite(rate) || rate is < 0.5 or > 2) throw new InvalidDataException("Invalid playback rate.");
+        if (!double.IsFinite(rate) || rate is < 0.25 or > 5) throw new InvalidDataException("Invalid playback rate.");
         return new(BinaryPrimitives.ReadInt64LittleEndian(bytes), BinaryPrimitives.ReadInt64LittleEndian(bytes[8..]),
             BinaryPrimitives.ReadInt64LittleEndian(bytes[16..]), BinaryPrimitives.ReadInt64LittleEndian(bytes[24..]),
             BinaryPrimitives.ReadInt64LittleEndian(bytes[32..]), BinaryPrimitives.ReadInt64LittleEndian(bytes[40..]) != 0,

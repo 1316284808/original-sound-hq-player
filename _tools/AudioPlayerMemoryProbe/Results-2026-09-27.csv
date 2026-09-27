@@ -1,0 +1,9 @@
+Scenario,PrivateMiB,PeakPrivateMiB,WorkingMiB,AllocatedKiBPerSecond,PostGcHeapMiB,TotalAllocatedMiB,NaturalGen2Count
+baseline,7.793,8.586,18.408,15.96,1.116,1.499,0
+gapless,10.448,11.012,20.636,15.82,1.112,2.231,0
+compressor,8.062,8.613,18.413,16.05,1.108,1.499,0
+rate025,9.504,9.559,19.466,15.92,1.421,2.760,0
+rate5,9.779,9.836,19.525,15.93,1.459,2.792,0
+switch,13.465,14.965,23.624,1130.04,1.118,68.107,18
+baseline192,11.387,12.844,20.925,16.06,3.094,3.477,0
+gapless192,17.641,19.492,27.513,15.95,3.095,5.540,1

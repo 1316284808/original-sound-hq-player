@@ -2280,7 +2280,7 @@ SHA-256: {5}
     <value>Çalma hızı</value>
   </data>
   <data name="DspPlaybackRateDescription" xml:space="preserve">
-    <value>Perdeyi koruyarak 0,5–2×. Değişiklikler mevcut konumdan yeniden arabelleğe alınır; 1× özgün örnekleri korur. Sarma desteklemeyen ağ akışları 1× hızında kalır.</value>
+    <value>Perdeyi koruyarak 0,25–5×. Değişiklikler mevcut konumdan yeniden arabelleğe alınır; 1× özgün örnekleri korur. Sarma desteklemeyen ağ akışları 1× hızında kalır.</value>
   </data>
   <data name="DspCompressor" xml:space="preserve">
     <value>Kompresör / sınırlayıcı</value>

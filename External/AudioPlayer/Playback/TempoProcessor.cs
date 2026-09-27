@@ -21,7 +21,8 @@ internal sealed class TempoProcessor
         _hop = Math.Max(16, sampleRate / 100);
         _search = Math.Max(8, sampleRate / 200);
         _stride = Math.Max(1, sampleRate / 12000);
-        _input = new double[(_hop * 4 + _search * 2 + 16384) * channels];
+        // Hold the next analysis hop plus its search window, including large source skips at 5x.
+        _input = new double[(_hop * ((int)Math.Ceiling(rate) + 4) + _search * 2 + 16384) * channels];
         _tail = new double[_hop * channels];
         _output = new double[_hop * channels];
     }

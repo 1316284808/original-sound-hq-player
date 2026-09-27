@@ -2,6 +2,12 @@
 
 新条目加在最上方。
 
+## 2026-09-27 固定倍速档位
+
+- `DspSettingsControl.xaml`、`DspSettingsViewModel.Playback.cs`：倍速改为不可编辑下拉框，提供 0.25、0.5、0.75、1、1.5、2、3、4、5×；避免显示浮点尾数，旧自定义倍速保留至用户重新选择。
+- `DspSettings.cs`、`PlaybackSnapshots.cs`、`RemotePlaybackService.cs`、`TempoProcessor.cs`：播放与遥测范围扩展为 0.25–5×，调整分析缓冲容量；同步七种语言说明及播放端产物。
+- 验证：主程序与 NativeAOT 构建通过；九档真实解码时长、音调和 seek 重置通过；0.25× / 5× 的真实 WASAPI 无缝切歌、暂停恢复通过，七种语言取词键静态检查通过。设置页外观未做人工验证。
+
 ## 2026-09-27 无缝播放、保调倍速与动态压限
 
 - `External/AudioPlayer/Playback`：预载下一首兼容本地 PCM，在同一输出回调内无停顿衔接；取消、暂停、seek、格式回退与退出保留明确的会话所有权。

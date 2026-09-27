@@ -57,6 +57,18 @@ internal static unsafe partial class Program
             byte[] progress = new byte[ProgressProtocol.Size];
             ProgressProtocol.Write(progress, snapshot);
             Require(ProgressProtocol.Read(progress) == snapshot, "Rate/token telemetry lost");
+            foreach (double rate in new[] { 0.25, 5.0 })
+            {
+                var endpoint = settings with { PlaybackRate = rate };
+                Require(endpoint.Sanitize().PlaybackRate == rate, "Valid endpoint clamped");
+                DspProtocol.WriteSettings(bytes, endpoint);
+                Require(DspProtocol.ReadSettings(bytes) == endpoint, "Endpoint settings lost");
+                var endpointProgress = snapshot with { PlaybackRate = rate };
+                ProgressProtocol.Write(progress, endpointProgress);
+                Require(ProgressProtocol.Read(progress) == endpointProgress, "Endpoint telemetry lost");
+            }
+            Require((settings with { PlaybackRate = 0.1 }).Sanitize().PlaybackRate == 0.25, "Lower bound");
+            Require((settings with { PlaybackRate = 6 }).Sanitize().PlaybackRate == 5, "Upper bound");
         });
         Run("Gapless: splice inside a callback, with exact sample order and continuous submitted frames", () =>
         {
@@ -120,7 +132,7 @@ internal static unsafe partial class Program
         {
             string path = Path.Combine(AppContext.BaseDirectory, "tempo-reference.wav");
             WriteLoudnessTone(path, 0.1f); // 3 seconds, 48 kHz, 1 kHz stereo
-            foreach (double speed in new[] { 0.5, 0.75, 1.25, 1.5, 2.0 })
+            foreach (double speed in new[] { 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 5 })
             {
                 using var decoder = new PcmDecoder();
                 Require(decoder.Open(path, 88200, 0), "Decoder open failed");

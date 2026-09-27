@@ -123,36 +123,93 @@ Console.WriteLine($"[smoke] Play(confirmed) → {t}（已收到执行确认）")
 Thread.Sleep(400); // 观察首段输出与通知
 PumpNotifications();
 
+// Memory experiment: one feature at a time; process counters are sampled by the client.
+if (args.Contains("--memory"))
+{
+    try
+    {
+        string scenario = args.FirstOrDefault(a => a.StartsWith("--scenario="))?[11..] ?? "baseline";
+        Console.WriteLine($"[memory-phase] {scenario}");
+        var settings = new DspSettings
+        {
+            PlaybackRate = scenario == "rate5" ? 5 : scenario == "rate025" ? 0.25 : 1,
+            CompressorEnabled = scenario == "compressor"
+        };
+        byte[] dspBytes = new byte[DspProtocol.SettingsSize];
+        void UpdateMemoryDsp(DspSettings value)
+        {
+            DspProtocol.WriteSettings(dspBytes, value);
+            if (Send(CommandId.UpdateDsp, dspBytes, out _) != MessageTypeId.Success)
+                throw new InvalidOperationException("Memory scenario DSP rejected");
+        }
+        void SampleProcess(string phase)
+        {
+            server.Refresh();
+            Console.WriteLine($"[memory-process] {phase},{server.PrivateMemorySize64},{server.WorkingSet64},{server.HandleCount},{server.Threads.Count}");
+        }
+        UpdateMemoryDsp(settings);
+        if (scenario == "gapless")
+        {
+            if (!SpinWait.SpinUntil(() => states.TryGetProgress(out var p) && p.Playing, 5000))
+                throw new InvalidOperationException("Playback not ready");
+            states.TryGetProgress(out var current);
+            var request = new GaplessRequest(current.Epoch, 91, mediaPath);
+            if (Send(CommandId.QueueNext, request.Write(), out _) != MessageTypeId.Success)
+                throw new InvalidOperationException("Memory scenario preload rejected");
+        }
+        for (int second = 0; second < runSeconds; second++)
+        {
+            if (scenario == "switch") UpdateMemoryDsp(settings with { PlaybackRate = second % 2 == 0 ? 1.5 : 1 });
+            Thread.Sleep(1000);
+            SampleProcess("playing");
+        }
+        Send(CommandId.MusicEnd, ReadOnlySpan<byte>.Empty, out _);
+        Console.WriteLine("[memory-phase] stopped");
+        Thread.Sleep(2000);
+        SampleProcess("stopped");
+        using var collect = EventWaitHandle.OpenExisting("Local\\AudioPlayerMemory-" + Environment.GetEnvironmentVariable("ORIGINALSOUND_IPC_SCOPE"));
+        collect.Set();
+        Thread.Sleep(2500);
+        SampleProcess("after-gc");
+        return 0;
+    }
+    finally { StopPlayer(); }
+}
+
 // Actual NativeAOT + persistent IPC + WASAPI integration for the new playback chain.
 if (args.Contains("--gapless"))
 {
     try
     {
+        string? rateOption = args.FirstOrDefault(a => a.StartsWith("--rate="));
+        double rate = rateOption == null ? 1.5 : double.Parse(rateOption[7..], System.Globalization.CultureInfo.InvariantCulture);
+        if (!double.IsFinite(rate) || rate is < 0.25 or > 5) throw new ArgumentOutOfRangeException(nameof(rate));
+        int drainTimeout = (int)Math.Ceiling(10000 / Math.Min(1, rate));
         Span<byte> dsp = stackalloc byte[DspProtocol.SettingsSize];
-        DspProtocol.WriteSettings(dsp, new DspSettings { PlaybackRate = 1.5, CompressorEnabled = true });
+        DspProtocol.WriteSettings(dsp, new DspSettings { PlaybackRate = rate, CompressorEnabled = true });
         if (Send(CommandId.UpdateDsp, dsp, out _) != MessageTypeId.Success)
             throw new InvalidOperationException("DSP settings rejected");
-        if (!SpinWait.SpinUntil(() => states.TryGetProgress(out var p) && p.PlaybackRate == 1.5 && p.Playing, 5000))
+        if (!SpinWait.SpinUntil(() => states.TryGetProgress(out var p) && p.PlaybackRate == rate && p.Playing, 5000))
             throw new InvalidOperationException("Speed change did not reach output telemetry");
         states.TryGetProgress(out var initial);
         long outputGeneration = states.CurrentDspState!.State.OutputGeneration;
         var queue = new GaplessRequest(initial.Epoch, 77, mediaPath);
         if (Send(CommandId.QueueNext, queue.Write(), out _) != MessageTypeId.Success)
             throw new InvalidOperationException("Gapless queue rejected");
-        if (!SpinWait.SpinUntil(() => states.TryGetProgress(out var p) && p.GaplessToken == 77, 10000))
+        if (!SpinWait.SpinUntil(() => states.TryGetProgress(out var p) && p.GaplessToken == 77, drainTimeout))
             throw new InvalidOperationException("Gapless transition missing");
         states.TryGetProgress(out var transitioned);
         if (playbackEnds != 0 || !transitioned.Playing || transitioned.Epoch == initial.Epoch
-            || transitioned.PlaybackRate != 1.5 || states.CurrentDspState!.State.OutputGeneration != outputGeneration)
+            || transitioned.PlaybackRate != rate || states.CurrentDspState!.State.OutputGeneration != outputGeneration)
             throw new InvalidOperationException("Transition stopped or rebuilt the output");
-        Console.WriteLine("[smoke] PASS: gapless at 1.5x + compressor, unchanged native output, no PlayEnded at boundary");
+        Console.WriteLine($"[smoke] PASS: gapless at {rate}x + compressor, unchanged native output, no PlayEnded at boundary");
         var pause = Send(CommandId.PlayButton, ReadOnlySpan<byte>.Empty, out var paused);
         if (pause != MessageTypeId.PlayState || BinarySerializer.ReadPlayStateResponse(paused).IsPlaying)
             throw new InvalidOperationException("Pause after transition failed");
         var resume = Send(CommandId.PlayButton, ReadOnlySpan<byte>.Empty, out var resumed);
         if (resume != MessageTypeId.PlayState || !BinarySerializer.ReadPlayStateResponse(resumed).IsPlaying)
             throw new InvalidOperationException("Resume after transition failed");
-        if (!SpinWait.SpinUntil(() => playbackEnds > 0, 10000) || playbackEnds != 1)
+        if (!SpinWait.SpinUntil(() => playbackEnds > 0, drainTimeout) || playbackEnds != 1)
             throw new InvalidOperationException("Final output did not drain exactly once");
         Console.WriteLine("[smoke] PASS: pause/resume after adoption and exactly one final end notification");
         Send(CommandId.MusicEnd, ReadOnlySpan<byte>.Empty, out _);

@@ -2279,7 +2279,7 @@ SHA-256：{5}
     <value>播放倍速</value>
   </data>
   <data name="DspPlaybackRateDescription" xml:space="preserve">
-    <value>0.5–2 倍，保留音调。修改时从当前进度重新缓冲；1 倍保持原始采样。 不支持定位的网络流固定使用 1 倍。</value>
+    <value>0.25–5 倍，保留音调。修改时从当前进度重新缓冲；1 倍保持原始采样。 不支持定位的网络流固定使用 1 倍。</value>
   </data>
   <data name="DspCompressor" xml:space="preserve">
     <value>压限器</value>
