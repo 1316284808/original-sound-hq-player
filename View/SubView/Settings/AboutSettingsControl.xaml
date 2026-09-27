@@ -56,7 +56,7 @@
                 <!--  应用信息（版本 + 相关链接，含免责声明在线版）  -->
                 <controls:SettingsExpander
                     x:Uid="AppTitleHeader"
-                    Description="© 2026 Sennpei Studio"
+                    Description="{x:Bind GetCopyrightDescription()}"
                     HeaderIcon="{ui:BitmapIcon Source=ms-appx:///Assets/Square44x44Logo.altform-unplated_targetsize-32.png}"
                     IsExpanded="True">
                     <TextBlock
@@ -108,7 +108,7 @@
                 <controls:SettingsCard
                     x:Uid="SpectrumVisualization"
                     Click="SpectrumVisualization_Click"
-                    Description="© 2026 Sennpei Studio"
+                    Description="{x:Bind GetCopyrightDescription()}"
                     HeaderIcon="{ui:BitmapIcon Source=ms-appx:///Assets/SpectrumVisualization.png}"
                     IsClickEnabled="True" />
 

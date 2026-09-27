@@ -2,6 +2,10 @@
 
 新条目加在最上方。
 
+## 2026-09-27 关于页版权年份改为动态
+
+- `AboutSettingsControl.xaml`、`AboutSettingsControl.xaml.cs`：两处 `© 2026 Sennpei Studio` 硬编码改为 `x:Bind` 函数绑定，运行时取 `DateTime.Now.Year`，跨年无需发版更新。
+
 ## 2026-09-27 合并关于页缓存设置并统计缓存总量
 
 - `AboutSettingsControl.xaml`：WebDAV 播放缓存并入同一个“缓存”展开卡片，移除独立控件和重复路径；保留位置、播放缓存开关/上限及两种清理入口。

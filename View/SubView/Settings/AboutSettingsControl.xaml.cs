@@ -40,6 +40,11 @@ namespace WinUIMusicPlayer.View.SubView.Settings
             }
         }
 
+        private string GetCopyrightDescription()
+        {
+            return $"© {DateTime.Now.Year} Sennpei Studio";
+        }
+
         private void SpectrumVisualization_Click(object sender, RoutedEventArgs e)
         {
             string storeUri = "spectrumvisualization:";
