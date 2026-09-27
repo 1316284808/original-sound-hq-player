@@ -155,7 +155,16 @@ namespace WinUIMusicPlayer.Controls
                         imageSource = await ImageHelper.DecodeFileToBitmapAsync(coverPath, token);
                     }
                     catch (OperationCanceledException) { return; }
-                    catch (Exception ex) { _logger.LogError(ex, "ImageSwitcher 从缓存加载失败"); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "ImageSwitcher 展示缓存不可用，尝试原图"); }
+                    if (imageSource is null)
+                    {
+                        try
+                        {
+                            imageSource = await ImageHelper.DecodeFileToBitmapAsync(
+                                rawPath, token, PlaybackCoverImage.MaxPixelSize);
+                        }
+                        catch (OperationCanceledException) { return; }
+                    }
                 }
             }
 

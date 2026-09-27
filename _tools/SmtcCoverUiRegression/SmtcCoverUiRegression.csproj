@@ -18,6 +18,15 @@
     <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
     <Compile Include="../../Helper/PlaybackCoverImage.cs" />
+    <Compile Include="../../Helper/PlaybackCoverCache.cs" />
+    <Compile Include="../../Helper/ReadOnlyMappedStream.cs" />
+    <Compile Include="../../Helper/DefaultCoverPaletteCache.cs" />
+    <Compile Include="../../Services/CoverPresentationService.cs" />
+    <Compile Include="../../Services/SystemMediaControlsService.cs" />
+    <Compile Include="../../Services/ApplicationTasks.cs" />
+    <Compile Include="../../Services/AppLifecycle.cs" />
+    <Compile Include="../../External/AnimatedWin2dControls/AnimatedWin2dControls/Impressionist/*.cs" />
+    <Compile Include="../../External/AnimatedWin2dControls/AnimatedWin2dControls/Enums/BackgroundShaderMode.cs" />
     <Compile Include="../../Helper/ImageHelper.cs" />
     <Compile Include="../../Helper/CoverLoadState.cs" />
     <Compile Include="../../Helper/TransitionCache.cs" />

@@ -21,7 +21,8 @@ namespace WinUIMusicPlayer.Helper
         private static readonly ILogger _logger = App.GetLogger<ImageHelperLogMarker>();
         private sealed class ImageHelperLogMarker { }
 
-        internal static async Task<BitmapImage?> DecodeFileToBitmapAsync(string path, CancellationToken token)
+        internal static async Task<BitmapImage?> DecodeFileToBitmapAsync(
+            string path, CancellationToken token, uint maxPixelSize = 0)
         {
             try
             {
@@ -30,6 +31,20 @@ namespace WinUIMusicPlayer.Helper
                 using var stream = await file.OpenReadAsync();
                 token.ThrowIfCancellationRequested();
                 var bitmap = new BitmapImage { DecodePixelType = DecodePixelType.Physical };
+                if (maxPixelSize > 0)
+                {
+                    var decoder = await BitmapDecoder.CreateAsync(stream);
+                    token.ThrowIfCancellationRequested();
+                    // 按 EXIF 方向后的最长边限制解码；小图保持原尺寸。
+                    if (Math.Max(decoder.OrientedPixelWidth, decoder.OrientedPixelHeight) > maxPixelSize)
+                    {
+                        if (decoder.OrientedPixelWidth >= decoder.OrientedPixelHeight)
+                            bitmap.DecodePixelWidth = checked((int)maxPixelSize);
+                        else
+                            bitmap.DecodePixelHeight = checked((int)maxPixelSize);
+                    }
+                    stream.Seek(0);
+                }
                 await bitmap.SetSourceAsync(stream);
                 token.ThrowIfCancellationRequested();
                 return bitmap;

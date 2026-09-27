@@ -162,8 +162,9 @@ namespace WinUIMusicPlayer.Services
         public Task UpdateMediaInfo(string title, string artist, string album, byte[]? cover = null)
             => UpdateMediaInfo(title, artist, album, cover, null);
 
-        internal Task UpdateMediaInfoFromFile(string title, string artist, string album, string? coverPath)
-            => UpdateMediaInfo(title, artist, album, null, coverPath);
+        internal Task UpdateMediaInfoFromFile(string title, string artist, string album, string? coverPath,
+            byte[]? fallbackCover = null)
+            => UpdateMediaInfo(title, artist, album, fallbackCover, coverPath);
 
         private Task UpdateMediaInfo(string title, string artist, string album, byte[]? cover, string? coverPath)
         {
@@ -204,7 +205,6 @@ namespace WinUIMusicPlayer.Services
             {
                 token.ThrowIfCancellationRequested();
                 if (_stopping || version != _mediaVersion || SystemMediaControls is null) return;
-                RandomAccessStreamReference thumbnail;
                 if (coverPath is { Length: > 0 })
                 {
                     try
@@ -216,20 +216,20 @@ namespace WinUIMusicPlayer.Services
                         if (_stopping || version != _mediaVersion || SystemMediaControls is null) return;
                     }
                     catch (OperationCanceledException) { throw; }
-                    catch (Exception ex) { _logger.LogWarning(ex, "读取 SMTC 封面失败，使用默认图片"); }
-                    thumbnail = stream is not null
-                        ? RandomAccessStreamReference.CreateFromStream(stream)
-                        : RandomAccessStreamReference.CreateFromUri(new Uri("ms-appx:///Assets/Album.png"));
+                    catch (Exception ex) { _logger.LogWarning(ex, "读取 SMTC 封面文件失败"); }
                 }
-                else if (cover is { Length: > 0 })
+                token.ThrowIfCancellationRequested();
+                if (stream is null && cover is { Length: > 0 })
                 {
                     stream = new InMemoryRandomAccessStream();
                     await stream.WriteAsync(cover.AsBuffer());
                     token.ThrowIfCancellationRequested();
                     stream.Seek(0);
-                    thumbnail = RandomAccessStreamReference.CreateFromStream(stream);
                 }
-                else thumbnail = RandomAccessStreamReference.CreateFromUri(new Uri("ms-appx:///Assets/Album.png"));
+                cover = null;
+                var thumbnail = stream is not null
+                    ? RandomAccessStreamReference.CreateFromStream(stream)
+                    : RandomAccessStreamReference.CreateFromUri(new Uri("ms-appx:///Assets/Album.png"));
                 lock (_mediaUpdateGate)
                 {
                     token.ThrowIfCancellationRequested();
@@ -251,6 +251,7 @@ namespace WinUIMusicPlayer.Services
             catch (Exception ex) { _logger.LogError(ex, "更新 SMTC 媒体信息失败"); }
             finally
             {
+                cover = null;
                 stream?.Dispose();
                 lock (_mediaUpdateGate)
                 {

@@ -180,6 +180,26 @@ await media.UpdateMediaInfoFromFile("missing cover", "artist", "album", invalid 
 Check(media.SystemMediaControls.DisplayUpdater.MusicProperties.Title == "missing cover", "缺失封面阻止元数据更新");
 Console.WriteLine("PASS: 连续切歌只提交最新封面，缺失文件仍更新文字");
 
+byte[] fallbackBytes = await File.ReadAllBytesAsync(small);
+await media.UpdateMediaInfoFromFile("file preferred", "artist", "album", portraitShared, fallbackBytes);
+await ExpectThumbnailSize(media, 512, 1536);
+// 让已选定的原图在真正打开时不可用，覆盖检查与使用之间的失败。
+using (var locked = new FileStream(small, FileMode.Open, FileAccess.Read, FileShare.None))
+{
+    await media.UpdateMediaInfoFromFile("bytes after open failure", "artist", "album", small, fallbackBytes);
+    await ExpectThumbnailSize(media, 320, 200);
+}
+await media.UpdateMediaInfoFromFile("no file", "artist", "album", null, fallbackBytes);
+await ExpectThumbnailSize(media, 320, 200);
+requests.Clear();
+for (int i = 0; i < 40; ++i)
+    requests.Add(media.UpdateMediaInfoFromFile("cancel-fallback-" + i, "artist", "album", invalid + ".missing", fallbackBytes));
+requests.Add(media.UpdateMediaInfoFromFile("latest file", "artist", "album", portraitShared));
+await Task.WhenAll(requests);
+Check(media.SystemMediaControls.DisplayUpdater.MusicProperties.Title == "latest file", "取消的字节兜底覆盖当前歌曲");
+await ExpectThumbnailSize(media, 512, 1536);
+Console.WriteLine("PASS: 原图优先、打开失败转字节、无文件字节兜底及兜底取消");
+
 // 两组使用同一分辨率/编码文件和真实 SMTC；不包含测试图生成与首次编码。
 await media.UpdateMediaInfoFromFile("warm", "artist", "album", shared);
 await Measure("同尺寸字节数组提交", async () =>
@@ -195,7 +215,8 @@ await Measure("共享热缓存文件流提交", async () =>
 
 requests.Clear();
 for (int i = 0; i < 40; ++i)
-    requests.Add(media.UpdateMediaInfoFromFile("shutdown-" + i, "artist", "album", shared));
+    requests.Add(media.UpdateMediaInfoFromFile("shutdown-" + i, "artist", "album",
+        i % 2 == 0 ? shared : invalid + ".missing", fallbackBytes));
 await media.StopAsync();
 Check(requests.All(task => task.IsCompleted), "退出未等待全部旧更新");
 await Task.WhenAll(requests);
@@ -205,6 +226,14 @@ foreach (string path in new[] { shared, portraitShared })
     using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
 }
 Console.WriteLine("PASS: 退出排空全部更新并释放封面文件句柄");
+
+static async Task ExpectThumbnailSize(SystemMediaControlsService media, uint width, uint height)
+{
+    using var thumbnail = await media.SystemMediaControls.DisplayUpdater.Thumbnail.OpenReadAsync();
+    var decoder = await BitmapDecoder.CreateAsync(thumbnail);
+    Check(decoder.OrientedPixelWidth == width && decoder.OrientedPixelHeight == height,
+        "SMTC 兜底封面内容不符");
+}
 
 static async Task ExpectSize(string path, uint width, uint height)
 {

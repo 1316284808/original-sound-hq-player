@@ -2,6 +2,13 @@
 
 新条目加在最上方。
 
+## 2026-09-27 修复封面缓存失败时丢失可用封面
+
+- `ImageSwitcher.xaml.cs`、`ImageHelper.cs`：展示缓存生成或解码失败时直接读取原图，按 EXIF 方向限制最长边 1536px，取消不触发兜底。
+- `CoverPresentationService.cs`、`SystemMediaControlsService.cs`：展示缓存失败保留原图，文件不可用时使用已取得的封面字节；正常热缓存仍只传路径，兜底沿用切歌取消与退出屏障。
+- `_tools/SmtcCoverRegression`、`_tools/SmtcCoverUiRegression`：增加缓存发布/替换失败、原图写入及打开失败、限尺寸解码、字节兜底、取消与退出回归。
+- 验证：主项目 x64 构建、真实 WIC/SMTC 与 WinUI 控件/展示管线回归通过；未进行完整播放器及系统媒体面板的人工视觉验证。
+
 ## 2026-09-27 SMTC 与详情页共享高分辨率封面
 
 - `PlaybackCoverImage.cs`、`ImageSwitcher.xaml.cs`、`ImageHelper.cs`：详情页与 SMTC 共用高分辨率封面文件，大图按比例限制最长边 1536px，小图不放大；串行生成并原子发布缓存，直接从文件流解码。

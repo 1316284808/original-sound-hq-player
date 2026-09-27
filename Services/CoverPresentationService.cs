@@ -128,8 +128,9 @@ public sealed class CoverPresentationService(AppState state, ApplicationTasks ta
 
             if (token.IsCancellationRequested) return;
 
-            // 两个消费者共享最大 1536px 的文件，UI 队列仅保留路径，不捕获原图数组。
+            // 正常路径只保留共享文件；缓存失败时才保留原图/已有字节用于兜底。
             string? mediaCoverPath = null;
+            byte[]? mediaFallbackCover = picData;
             if (music.ImageHash is { Length: > 0 })
             {
                 string rawPath = FindRawCachePath(music.ImageHash);
@@ -137,15 +138,18 @@ public sealed class CoverPresentationService(AppState state, ApplicationTasks ta
                 {
                     if (File.Exists(rawPath) && new FileInfo(rawPath).Length > 0)
                     {
+                        // 展示缓存生成失败仍可直接使用原图，字节也保留到实际打开文件后。
+                        mediaCoverPath = rawPath;
                         bool hadDisplayCache = File.Exists(PlaybackCoverImage.GetCachePath(rawPath));
                         mediaCoverPath = await Task.Run(
                             () => PlaybackCoverImage.GetOrCreateAsync(rawPath, token), token);
+                        mediaFallbackCover = null;
                         if (music.IsRemote && !hadDisplayCache && mediaCoverPath != rawPath)
                             await webDav.TrimCoverCacheAsync(rawPath, token);
                     }
                 }
                 catch (OperationCanceledException) { throw; }
-                catch (Exception ex) { logger.LogWarning(ex, "准备系统媒体封面失败"); }
+                catch (Exception ex) { logger.LogWarning(ex, "准备系统媒体封面缓存失败，保留原图兜底"); }
             }
             picData = null;
 
@@ -166,9 +170,11 @@ public sealed class CoverPresentationService(AppState state, ApplicationTasks ta
             });
 
             // --- 阶段 D: 更新系统媒体控制 (SMTC) ---
-            // 同样在后台运行，避免 SMTC 的 COM 组件调用阻塞 UI
+            // 在 UI 线程提交；实际文件打开由媒体服务的后台任务处理。
             App.MainWindow.DispatcherQueue.TryEnqueue(() =>
             {
+                var fallbackCover = mediaFallbackCover;
+                mediaFallbackCover = null;
                 if (_disposed || state.Lifecycle.Phase == AppPhase.Stopping || token.IsCancellationRequested || version != Volatile.Read(ref _coverUpdateVersion) ||
                     !ReferenceEquals(music, state.Playback.CurrentPlayingMusic)) return;
 
@@ -178,7 +184,8 @@ public sealed class CoverPresentationService(AppState state, ApplicationTasks ta
                     music.Title,
                     music.Author,
                     music.Album,
-                    mediaCoverPath);
+                    mediaCoverPath,
+                    fallbackCover);
             });
         }
         catch (OperationCanceledException)
