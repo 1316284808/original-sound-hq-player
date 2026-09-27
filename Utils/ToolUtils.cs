@@ -1342,6 +1342,9 @@ namespace WinUIMusicPlayer.Utils
                 foreach (var f in Directory.EnumerateFiles(cacheFolder, "*_raw.bin"))
                     keepFiles.Add(f);
 
+                foreach (var f in Directory.EnumerateFiles(cacheFolder, "*" + PlaybackCoverImage.CacheSuffix))
+                    keepFiles.Add(f);
+
                 // 删除旧格式/旧尺寸缓存
                 var cacheExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                     { ".bmp", ".raw", ".bgra8", ".png", ".jpg" };

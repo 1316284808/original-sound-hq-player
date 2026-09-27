@@ -378,18 +378,38 @@ public sealed partial class WebDavLibraryService(MusicDatabaseService database, 
     }
     private static void TrimCovers(string folder, string currentFile)
     {
-        var files = new DirectoryInfo(folder).GetFiles("*_raw.bin");
+        var files = new DirectoryInfo(folder).GetFiles();
         Array.Sort(files, static (a, b) => a.LastWriteTimeUtc.CompareTo(b.LastWriteTimeUtc));
         long size = 0;
-        foreach (var file in files) size += file.Length;
+        foreach (var file in files)
+            if (IsCoverCacheFile(file.Name)) size += file.Length;
+        string currentDisplay = PlaybackCoverImage.GetCachePath(currentFile);
         foreach (var file in files)
         {
             if (size <= 256L * 1024 * 1024) break;
-            if (file.FullName.Equals(currentFile, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!IsCoverCacheFile(file.Name) || file.FullName.Equals(currentFile, StringComparison.OrdinalIgnoreCase) ||
+                file.FullName.Equals(currentDisplay, StringComparison.OrdinalIgnoreCase)) continue;
             long bytes = file.Length;
             file.Delete();
             size -= bytes;
         }
+    }
+
+    private static bool IsCoverCacheFile(string path)
+        => path.EndsWith("_raw.bin", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(PlaybackCoverImage.CacheSuffix, StringComparison.OrdinalIgnoreCase);
+
+    // 新生成的展示图也计入远程封面容量；热命中不重复扫描目录。
+    internal async Task TrimCoverCacheAsync(string rawPath, CancellationToken token)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, token);
+        await _coverSlot.WaitAsync(linked.Token).ConfigureAwait(false);
+        try
+        {
+            await Task.Run(() => TrimCovers(Path.GetDirectoryName(rawPath)!, rawPath), linked.Token)
+                .ConfigureAwait(false);
+        }
+        finally { _coverSlot.Release(); }
     }
 
     /// <summary>与原图读写互斥，只清封面，不影响音频租约。</summary>
@@ -402,8 +422,9 @@ public sealed partial class WebDavLibraryService(MusicDatabaseService database, 
             {
                 string folder = WebDavCachePaths.Covers(cacheRoot);
                 if (!Directory.Exists(folder)) return;
-                foreach (string file in Directory.EnumerateFiles(folder, "*_raw.bin"))
+                foreach (string file in Directory.EnumerateFiles(folder))
                 {
+                    if (!IsCoverCacheFile(file)) continue;
                     _stop.Token.ThrowIfCancellationRequested();
                     try { File.Delete(file); }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

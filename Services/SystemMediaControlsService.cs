@@ -1,7 +1,6 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
-using System.IO;
+using System.Collections.Generic;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,7 +8,7 @@ using Windows.Media;
 using Windows.Media.Playback;
 using Windows.Storage.Streams;
 using WinUIMusicPlayer.Model;
-using WinUIMusicPlayer.ViewModel;
+using WinUIMusicPlayer.Helper;
 
 namespace WinUIMusicPlayer.Services
 {
@@ -27,24 +26,21 @@ namespace WinUIMusicPlayer.Services
         private PlaybackCommands? _commands;
         private bool _stopping;
         private long _mediaVersion;
-        private Task _mediaUpdate = Task.CompletedTask;
+        private readonly HashSet<Task> _mediaUpdates = [];
         private CancellationTokenSource? _mediaUpdateCts;
         private readonly object _mediaUpdateGate = new();
-        private InMemoryRandomAccessStream? _thumbnailStream;
+        private IRandomAccessStream? _thumbnailStream;
         public async Task StopAsync()
         {
             Task pending;
-            CancellationTokenSource? updateCts;
             lock (_mediaUpdateGate)
             {
                 _stopping = true;
                 _mediaVersion++;
-                updateCts = _mediaUpdateCts;
+                _mediaUpdateCts?.Cancel();
                 _mediaUpdateCts = null;
-                pending = _mediaUpdate;
+                pending = Task.WhenAll(_mediaUpdates);
             }
-            updateCts?.Cancel();
-            updateCts?.Dispose();
             if (SystemMediaControls is not null) SystemMediaControls.IsEnabled = false;
             await pending;
         }
@@ -128,16 +124,13 @@ namespace WinUIMusicPlayer.Services
 
         public void Dispose()
         {
-            CancellationTokenSource? updateCts;
             lock (_mediaUpdateGate)
             {
                 _stopping = true;
                 _mediaVersion++;
-                updateCts = _mediaUpdateCts;
+                _mediaUpdateCts?.Cancel();
                 _mediaUpdateCts = null;
             }
-            updateCts?.Cancel();
-            updateCts?.Dispose();
             _thumbnailStream?.Dispose();
             _thumbnailStream = null;
             if (_commands is not null)
@@ -166,10 +159,15 @@ namespace WinUIMusicPlayer.Services
         }
 
 
-        public Task UpdateMediaInfo(string title, string artist, string album, byte[] cover = null)
+        public Task UpdateMediaInfo(string title, string artist, string album, byte[]? cover = null)
+            => UpdateMediaInfo(title, artist, album, cover, null);
+
+        internal Task UpdateMediaInfoFromFile(string title, string artist, string album, string? coverPath)
+            => UpdateMediaInfo(title, artist, album, null, coverPath);
+
+        private Task UpdateMediaInfo(string title, string artist, string album, byte[]? cover, string? coverPath)
         {
             var updateCts = new CancellationTokenSource();
-            CancellationTokenSource? previousCts;
             Task update;
             lock (_mediaUpdateGate)
             {
@@ -179,29 +177,51 @@ namespace WinUIMusicPlayer.Services
                     return Task.CompletedTask;
                 }
 
-                previousCts = _mediaUpdateCts;
+                // CTS 由实际工作释放；取消等待不能提前销毁仍在使用的资源。
+                _mediaUpdateCts?.Cancel();
                 _mediaUpdateCts = updateCts;
-                update = UpdateMediaInfoCoreAsync(++_mediaVersion, title, artist, album, cover, updateCts);
-                _mediaUpdate = update;
+                update = UpdateMediaInfoCoreAsync(++_mediaVersion, title, artist, album, cover, coverPath, updateCts);
+                _mediaUpdates.Add(update);
             }
 
-            // SMTC 只需要最新一首歌。取消并释放前一次更新，避免大封面
-            // 被串行任务链保留到所有旧更新完成后才可回收。
-            previousCts?.Cancel();
-            previousCts?.Dispose();
-            return update;
+            return ObserveMediaUpdateAsync(update);
         }
 
-        private async Task UpdateMediaInfoCoreAsync(long version, string title, string artist, string album, byte[]? cover, CancellationTokenSource ownerCts)
+        private async Task ObserveMediaUpdateAsync(Task update)
         {
-            InMemoryRandomAccessStream? stream = null;
+            try { await update; }
+            finally { lock (_mediaUpdateGate) _mediaUpdates.Remove(update); }
+        }
+
+        private async Task UpdateMediaInfoCoreAsync(long version, string title, string artist, string album, byte[]? cover,
+            string? coverPath, CancellationTokenSource ownerCts)
+        {
+            // 先登记任务再执行，使退出屏障覆盖已取消但仍在结束文件 I/O 的更新。
+            await Task.Yield();
+            IRandomAccessStream? stream = null;
             var token = ownerCts.Token;
             try
             {
                 token.ThrowIfCancellationRequested();
                 if (_stopping || version != _mediaVersion || SystemMediaControls is null) return;
                 RandomAccessStreamReference thumbnail;
-                if (cover is { Length: > 0 })
+                if (coverPath is { Length: > 0 })
+                {
+                    try
+                    {
+                        // 普通 .NET 流不支持 SMTC 所需的 CloneStream；映射流共享文件页，
+                        // 每个克隆独立维护位置和生命周期，不复制整份编码图片。
+                        stream = await Task.Run(() => ReadOnlyMappedStream.Open(coverPath), token);
+                        token.ThrowIfCancellationRequested();
+                        if (_stopping || version != _mediaVersion || SystemMediaControls is null) return;
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex) { _logger.LogWarning(ex, "读取 SMTC 封面失败，使用默认图片"); }
+                    thumbnail = stream is not null
+                        ? RandomAccessStreamReference.CreateFromStream(stream)
+                        : RandomAccessStreamReference.CreateFromUri(new Uri("ms-appx:///Assets/Album.png"));
+                }
+                else if (cover is { Length: > 0 })
                 {
                     stream = new InMemoryRandomAccessStream();
                     await stream.WriteAsync(cover.AsBuffer());
@@ -210,27 +230,33 @@ namespace WinUIMusicPlayer.Services
                     thumbnail = RandomAccessStreamReference.CreateFromStream(stream);
                 }
                 else thumbnail = RandomAccessStreamReference.CreateFromUri(new Uri("ms-appx:///Assets/Album.png"));
-                token.ThrowIfCancellationRequested();
-                if (_stopping || version != _mediaVersion || SystemMediaControls is null) return;
-                var updater = SystemMediaControls.DisplayUpdater;
-                updater.Type = MediaPlaybackType.Music;
-                updater.MusicProperties.Title = title;
-                updater.MusicProperties.Artist = artist;
-                updater.MusicProperties.AlbumTitle = album;
-                updater.Thumbnail = thumbnail;
-                updater.Update();
-                var oldStream = _thumbnailStream;
-                _thumbnailStream = stream;
-                stream = null;
-                oldStream?.Dispose();
+                lock (_mediaUpdateGate)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (_stopping || version != _mediaVersion || SystemMediaControls is null) return;
+                    var updater = SystemMediaControls.DisplayUpdater;
+                    updater.Type = MediaPlaybackType.Music;
+                    updater.MusicProperties.Title = title;
+                    updater.MusicProperties.Artist = artist;
+                    updater.MusicProperties.AlbumTitle = album;
+                    updater.Thumbnail = thumbnail;
+                    updater.Update();
+                    var oldStream = _thumbnailStream;
+                    _thumbnailStream = stream;
+                    stream = null;
+                    oldStream?.Dispose();
+                }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { }
             catch (Exception ex) { _logger.LogError(ex, "更新 SMTC 媒体信息失败"); }
             finally
             {
                 stream?.Dispose();
-                if (ReferenceEquals(Interlocked.CompareExchange(ref _mediaUpdateCts, null, ownerCts), ownerCts))
+                lock (_mediaUpdateGate)
+                {
+                    if (ReferenceEquals(_mediaUpdateCts, ownerCts)) _mediaUpdateCts = null;
                     ownerCts.Dispose();
+                }
             }
         }
 

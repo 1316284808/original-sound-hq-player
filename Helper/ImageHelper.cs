@@ -11,6 +11,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Graphics.Imaging;
+using Windows.Storage;
 using Windows.Storage.Streams;
 
 namespace WinUIMusicPlayer.Helper
@@ -19,6 +20,27 @@ namespace WinUIMusicPlayer.Helper
     {
         private static readonly ILogger _logger = App.GetLogger<ImageHelperLogMarker>();
         private sealed class ImageHelperLogMarker { }
+
+        internal static async Task<BitmapImage?> DecodeFileToBitmapAsync(string path, CancellationToken token)
+        {
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                var file = await StorageFile.GetFileFromPathAsync(path);
+                using var stream = await file.OpenReadAsync();
+                token.ThrowIfCancellationRequested();
+                var bitmap = new BitmapImage { DecodePixelType = DecodePixelType.Physical };
+                await bitmap.SetSourceAsync(stream);
+                token.ThrowIfCancellationRequested();
+                return bitmap;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "DecodeFileToBitmapAsync 失败");
+                return null;
+            }
+        }
 
         internal static async Task<BitmapImage?> DecodeToBitmapAsync(
             byte[]? bytes, int decodePixelWidth = 0, CancellationToken token = default)
@@ -52,13 +74,13 @@ namespace WinUIMusicPlayer.Helper
 
         private static float blurAmount = 10.0f;
         private static int TargetWidth = 200;
-        private static CanvasDevice device = CanvasDevice.GetSharedDevice();
         public static async Task<WriteableBitmap> ApplyMicaEffectWin2DAsync(
                    this byte[] cover,
                    bool isDarkMode)
         {
             try
             {
+                var device = CanvasDevice.GetSharedDevice();
                 using var imageStream = new InMemoryRandomAccessStream();
                 await imageStream.WriteAsync(cover.AsBuffer());
                 imageStream.Seek(0);

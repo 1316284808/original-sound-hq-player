@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0-windows10.0.26100.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="../../Helper/PlaybackCoverImage.cs" Link="PlaybackCoverImage.cs" />
+    <Compile Include="../../Helper/ReadOnlyMappedStream.cs" Link="ReadOnlyMappedStream.cs" />
+    <Compile Include="../../Services/SystemMediaControlsService.cs" Link="SystemMediaControlsService.cs" />
+  </ItemGroup>
+</Project>

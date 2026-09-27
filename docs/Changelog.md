@@ -2,6 +2,13 @@
 
 新条目加在最上方。
 
+## 2026-09-27 SMTC 与详情页共享高分辨率封面
+
+- `PlaybackCoverImage.cs`、`ImageSwitcher.xaml.cs`、`ImageHelper.cs`：详情页与 SMTC 共用高分辨率封面文件，大图按比例限制最长边 1536px，小图不放大；串行生成并原子发布缓存，直接从文件流解码。
+- `CoverPresentationService.cs`、`SystemMediaControlsService.cs`、`ReadOnlyMappedStream.cs`：热缓存避免读取原图大数组；SMTC 克隆共享文件页，UI 队列只保留路径，清空缓存不破坏在途读取，退出等待全部更新并释放流。
+- `ToolUtils.cs`、`WebDavLibraryService.cs`：高分辨率缓存纳入启动保留、远程容量裁剪和清理。
+- 验证：真实 WIC/SMTC 与 ImageSwitcher 回归通过，覆盖 JPEG 方向、PNG 透明度、取消、快速切歌、删除缓存和退出；1536px 噪声测试图热提交的托管分配约 7.42MB → 40KB/次，10 次文件流提交无 GC，仅代表此路径；完整系统媒体面板外观与整机 GC 停顿未测。
+
 ## 2026-09-27 修复 1.2.9.0 以来审查问题并优化无缝预载
 
 - `PlaybackEngine.Gapless.cs`、`GaplessPreloader.cs`：按剩余实际播放时间 10 秒延迟创建待播会话，未知时长提前准备；单个工作任务合并过期计划，统一迟到会话与退出清理，PCM 环容量不变。
