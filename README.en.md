@@ -217,7 +217,7 @@ Add-AppxPackage -Register "$layout\AppxManifest.xml"
 
 If you find OriginalSound HI-FI Player helpful, consider buying the developer a coffee ☕ — your support keeps the project alive and updated!
 
-**[Afdian](https://afdian.com/a/SennpaiStudio)** · Alipay / WeChat Pay QR codes:
+**[Afdian](https://afdian.com/a/SennpeiStudio)** · Alipay / WeChat Pay QR codes:
 
 | Alipay | WeChat Pay |
 | :---: | :---: |

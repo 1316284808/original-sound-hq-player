@@ -213,7 +213,7 @@ Add-AppxPackage -Register "$layout\AppxManifest.xml"
 
 如果原音 HQ 播放器对你有帮助，欢迎请作者喝杯咖啡 ☕ 你的支持是项目持续维护与更新的动力！
 
-**[爱发电](https://afdian.com/a/SennpaiStudio)** · 支付宝 / 微信收款码：
+**[爱发电](https://afdian.com/a/SennpeiStudio)** · 支付宝 / 微信收款码：
 
 | 支付宝 | 微信 |
 | :---: | :---: |
