@@ -1058,6 +1058,8 @@ namespace WinUIMusicPlayer.Services
                 AppViewModel.DefaultPlayListComboBoxTag = settings.DefaultPlayList;
                 AppViewModel.Latency = audio.Latency;
                 AppViewModel.BackdropType = settings.AppStyle;
+                AppViewModel.WindowBackgroundImagePath = settings.WindowBackgroundImagePath;
+                AppViewModel.WindowBackgroundBlurAmount = settings.WindowBackgroundBlurAmount;
                 AppViewModel.ThemeType = settings.AppTheme;
                 AppViewModel.IsRunningBackend = settings.IsRunningBackend;
                 AppSettings.AutoHideDesktopLyricsOnPlayingDetail = settings.AutoHideDesktopLyricsOnPlayingDetail;

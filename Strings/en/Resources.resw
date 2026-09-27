@@ -2297,4 +2297,11 @@ SHA-256: {5}
   <data name="DspCompressorMakeup" xml:space="preserve">
     <value>Makeup gain (dB)</value>
   </data>
+  <data name="WindowBackgroundTitle" xml:space="preserve"><value>Main window image background</value></data>
+  <data name="WindowBackgroundImage" xml:space="preserve"><value>Background image</value></data>
+  <data name="WindowBackgroundDescription" xml:space="preserve"><value>Choose a local image for the main window. Clear it to restore the window material.</value></data>
+  <data name="WindowBackgroundChoose" xml:space="preserve"><value>Choose image</value></data>
+  <data name="WindowBackgroundClear" xml:space="preserve"><value>Clear image</value></data>
+  <data name="WindowBackgroundBlur" xml:space="preserve"><value>Blur amount</value></data>
+  <data name="WindowBackgroundLoadError" xml:space="preserve"><value>Cannot load the background image. Choose an accessible JPG, PNG, BMP, or WebP image.</value></data>
 </root>

@@ -2,6 +2,18 @@
 
 新条目加在最上方。
 
+## 2026-09-27 修复展开图片背景设置时闪退
+
+- `GeneralSettingsControl.xaml`：将背景错误 InfoBar 移到 SettingsExpander.Items 外，避免展开时应用 SettingsCard 样式导致 COMException；无错误时隐藏提示。
+- `_tools/AppearanceUiRegression`：直接提取生产 XAML，在真实 WinUI/Toolkit 模板中复现原异常并验证展开、反复折叠/展开及错误提示显示/隐藏；主程序构建通过。
+
+## 2026-09-27 主窗口图片背景与倍速默认选择
+
+- `MainWindow.xaml`、`Controls/WindowBackgroundImage.cs`：新增铺满窗口的自定义图片背景与 0–100 模糊；按需读取、限制解码尺寸，换图/清除/退出释放合成资源，缺失或损坏图片回退原窗口材质，高对比度下隐藏图片。
+- `GeneralSettingsControl.xaml`、`AppViewModel.WindowBackground.cs`、设置状态/保存链路、`Strings/*`：常规设置新增选择/清除图片和模糊滑块/数值输入；保存路径与模糊值，旧设置保持原背景，默认模糊 20；补齐七种语言独立资源键。
+- `DspSettingsViewModel.Playback.cs`：绑定初始化直接读取已保存倍速，恢复偏好期间忽略临时选择写回；无设置时默认选中 1×，保留已有档位和旧自定义倍速。
+- 验证：主程序构建、真实 WinUI 倍速绑定/图片合成与生命周期回归、设置持久化及七种语言资源检查；完整设置页、图片选择对话框与系统高对比度切换未做人工验证。
+
 ## 2026-09-27 固定倍速档位
 
 - `DspSettingsControl.xaml`、`DspSettingsViewModel.Playback.cs`：倍速改为不可编辑下拉框，提供 0.25、0.5、0.75、1、1.5、2、3、4、5×；避免显示浮点尾数，旧自定义倍速保留至用户重新选择。

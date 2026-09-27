@@ -2296,4 +2296,11 @@ SHA-256：{5}
   <data name="DspCompressorMakeup" xml:space="preserve">
     <value>补偿增益（dB）</value>
   </data>
+  <data name="WindowBackgroundTitle" xml:space="preserve"><value>主窗口图片背景</value></data>
+  <data name="WindowBackgroundImage" xml:space="preserve"><value>背景图片</value></data>
+  <data name="WindowBackgroundDescription" xml:space="preserve"><value>选择本地图片作为主窗口背景；清除后恢复原有窗口材质。</value></data>
+  <data name="WindowBackgroundChoose" xml:space="preserve"><value>选择图片</value></data>
+  <data name="WindowBackgroundClear" xml:space="preserve"><value>清除图片</value></data>
+  <data name="WindowBackgroundBlur" xml:space="preserve"><value>模糊程度</value></data>
+  <data name="WindowBackgroundLoadError" xml:space="preserve"><value>无法加载背景图片，请重新选择可访问的 JPG、PNG、BMP 或 WebP 图片。</value></data>
 </root>

@@ -1,0 +1,17 @@
+<UserControl x:Class="AppearanceUiRegression.RateControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ComboBox x:Name="Rate" Width="220" IsEditable="False"
+        SelectedIndex="{x:Bind ViewModel.PlaybackRateIndex, Mode=TwoWay}"
+        PlaceholderText="{x:Bind ViewModel.PlaybackRateText, Mode=OneWay}">
+        <ComboBoxItem Content="0.25×" />
+        <ComboBoxItem Content="0.5×" />
+        <ComboBoxItem Content="0.75×" />
+        <ComboBoxItem Content="1×" />
+        <ComboBoxItem Content="1.5×" />
+        <ComboBoxItem Content="2×" />
+        <ComboBoxItem Content="3×" />
+        <ComboBoxItem Content="4×" />
+        <ComboBoxItem Content="5×" />
+    </ComboBox>
+</UserControl>

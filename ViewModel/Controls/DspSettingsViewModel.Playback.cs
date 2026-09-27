@@ -32,13 +32,15 @@ public partial class DspSettingsViewModel
             OnPropertyChanged(nameof(PlaybackRateText));
             SettingChanged(LicenseFeature.None);
         }
-    }
+    } = AppSettings.Dsp.PlaybackRate;
 
     public int PlaybackRateIndex
     {
         get => System.Array.IndexOf(PlaybackRates, PlaybackRate);
         set
         {
+            // Loading/x:Bind can publish a transient selection before saved values are restored.
+            if (_syncing || !_loaded) return;
             // A legacy custom rate has no selected item. Ignore selection clearing during binding updates.
             if ((uint)value < (uint)PlaybackRates.Length) PlaybackRate = PlaybackRates[value];
         }

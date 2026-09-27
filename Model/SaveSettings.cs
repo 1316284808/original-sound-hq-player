@@ -35,6 +35,8 @@ namespace WinUIMusicPlayer.Model
         [JsonPropertyName("DefualtPlayList")]
         public string DefaultPlayList { get; set; } = "song";
         public string AppStyle { get; set; } = "TransparentAcrylic";
+        public string WindowBackgroundImagePath { get; set; } = string.Empty;
+        public double WindowBackgroundBlurAmount { get; set; } = 20;
         public float CustomAcrylicOpacity { get; set; } = 0.5f;
         public uint CustomColorArgb { get; set; } = 0xFF808080u;
         public uint LyricsCustomColorRgb { get; set; } = 0x00FFFFFFu;

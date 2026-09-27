@@ -26,6 +26,13 @@ try
          "AppTheme":"Dark","AppWidth":1450,"DefualtEntry":"song","PlayOrPauseShortcut":["Ctrl","P"]}
         """;
     var defaults = JsonSerializer.Deserialize("{}", SettingsJsonContext.Default.SaveSettings)!;
+    Check(defaults.WindowBackgroundImagePath == string.Empty && defaults.WindowBackgroundBlurAmount == 20,
+        "Old settings must keep the original backdrop without an image.");
+    var imageSettings = new SaveSettings { WindowBackgroundImagePath = @"C:\Pictures\背景.png", WindowBackgroundBlurAmount = 37 };
+    var imageRoundTrip = JsonSerializer.Deserialize(JsonSerializer.Serialize(imageSettings, SettingsJsonContext.Default.SaveSettings), SettingsJsonContext.Default.SaveSettings)!;
+    Check(imageRoundTrip.WindowBackgroundImagePath == imageSettings.WindowBackgroundImagePath && imageRoundTrip.WindowBackgroundBlurAmount == 37,
+        "Custom background path and blur must survive restart.");
+    Console.WriteLine("PASS: background compatibility defaults and image/blur persistence.");
     Check(!defaults.IsHoverScrollEnabled, "Settings without hover-scroll key must default to hover-scroll disabled.");
     defaults.IsHoverScrollEnabled = true;
     var hoverRoundTrip = JsonSerializer.Deserialize(JsonSerializer.Serialize(defaults, SettingsJsonContext.Default.SaveSettings), SettingsJsonContext.Default.SaveSettings)!;
