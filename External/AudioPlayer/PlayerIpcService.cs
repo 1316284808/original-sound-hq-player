@@ -1,96 +1,74 @@
-using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using AudioPlayer.Playback;
 using BassPlayerIpc.Shared;
 
 namespace AudioPlayer;
 
-/// <summary>
-/// 共享内存邮箱 IPC 服务端 —— BassPlayerSharp MmpIpcService 的协议级移植
-/// （版本化邮箱 + 双缓冲通知 + 序号匹配 + 信号量仅作唤醒提示，逐字节兼容）。
-/// </summary>
+/// <summary>Owns the playback engine and its ordered command, streaming-control and state pipes.</summary>
 public class PlayerIpcService : IDisposable
 {
     private PlaybackEngine? _engine;
-    private DspStateMailbox? _dspMailbox;
-    private ProgressMailbox? _progressMailbox;
-    private Task? _progressTask;
-    private Task? _streamingTask;
-
-    private static readonly long MmfSize = IpcConstants.MmfSize;
-
-    private MemoryMappedFile? _mmf;
-    private MemoryMappedViewAccessor? _accessor;
-
-    private Semaphore? _requestReadySemaphore;
-    private Semaphore? _responseReadySemaphore;
-    private Semaphore? _notificationReadySemaphore;
-
-    private CancellationTokenSource? _cancellationTokenSource;
-    private Task? _listenerTask;
-    private Task? _clientMonitorTask;
-    private int _disposeStarted;
-
-    private readonly byte[] _requestBuffer;
-    private readonly object _notificationLock = new();
-
-    private int _lastRequestVersion;
-    private int _notificationVersion;
-
-    // 设备分页缓存：首次请求枚举，后续页取缓存（bass 同款）
+    private readonly PipeStateServer _stateServer = new();
+    private readonly CancellationTokenSource _stop = new();
+    private readonly object _lifecycleGate = new();
+    private Task? _runTask;
+    private int _disposed;
+    private bool _stopping;
+    private Mutex? _instanceMutex;
+    // Only the single ordered control connection accesses this reusable response buffer.
+    private readonly byte[] _responseBuffer = new byte[IpcConstants.MaxResponseSize];
+    private MessageTypeId _responseType;
+    private int _responseLength;
     private (int id, string name, string endpoint)[]? _cachedWasapiDevices;
     private (int id, string name, string endpoint)[]? _cachedAsioDevices;
 
-    private static Mutex? _instanceMutex;
-
-    public PlayerIpcService()
+    public Task StartAsync()
     {
-        CheckSingleInstance();
-        _cancellationTokenSource = new CancellationTokenSource();
-        _requestBuffer = new byte[IpcConstants.MaxRequestSize];
+        lock (_lifecycleGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed != 0 || _stopping, this);
+            return _runTask ??= RunAsync();
+        }
     }
 
-    private static void CheckSingleInstance()
+    private async Task RunAsync()
     {
-        _instanceMutex = new Mutex(true, IpcConstants.MutexName, out bool mutexCreated);
-        if (!mutexCreated) Environment.Exit(0);
-    }
-
-    public async Task StartAsync()
-    {
+        Task commands = Task.CompletedTask, streaming = Task.CompletedTask, state = Task.CompletedTask;
+        Task progress = Task.CompletedTask, monitor = Task.CompletedTask;
         try
         {
-            _mmf = MemoryMappedFile.CreateOrOpen(IpcConstants.MmfName, MmfSize);
-            _accessor = _mmf.CreateViewAccessor(0, MmfSize);
-            _requestReadySemaphore = new Semaphore(0, 1, IpcConstants.RequestSemaphoreName, out _);
-            _responseReadySemaphore = new Semaphore(0, 1, IpcConstants.ResponseSemaphoreName, out _);
-            _notificationReadySemaphore = new Semaphore(0, 1, IpcConstants.NotificationSemaphoreName, out _);
-
-            Console.WriteLine($"Server ready. MMF: {IpcConstants.MmfName}");
-            _dspMailbox = new DspStateMailbox(create: true);
-            _progressMailbox = new ProgressMailbox(create: true);
+            _instanceMutex = new Mutex(true, IpcConstants.MutexName, out bool created);
+            if (!created) return;
+            var instanceId = Guid.NewGuid();
             _engine = new PlaybackEngine(this);
-            _streamingTask = new StreamingServer(_engine).RunAsync(_cancellationTokenSource!.Token);
-            _progressTask = PublishProgressAsync(_cancellationTokenSource!.Token);
             PublishDspState(_engine.GetDspState());
-            _listenerTask = Task.Factory.StartNew(() => ListenForRequests(_cancellationTokenSource!.Token),
-                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-            _clientMonitorTask = Task.Run(() => MonitorClientAliveAsync(_cancellationTokenSource!.Token));
-            await Task.WhenAny(_listenerTask, _clientMonitorTask);
+            commands = new PipeCommandServer(IpcConstants.ControlPipeName, instanceId, HandleCommand)
+                .RunAsync(_stop.Token, singleSession: true);
+            streaming = new StreamingServer(_engine, instanceId).RunAsync(_stop.Token);
+            state = _stateServer.RunAsync(IpcConstants.StatePipeName, instanceId, _stop.Token);
+            progress = PublishProgressAsync(_stop.Token);
+            monitor = MonitorClientAliveAsync(_stop.Token);
+            Console.WriteLine($"Server ready. Pipe protocol {PipeProtocol.Version}");
+            var completed = await Task.WhenAny(commands, streaming, state, progress, monitor).ConfigureAwait(false);
+            await completed.ConfigureAwait(false);
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Server error: {ex.Message}");
-        }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+        catch (Exception ex) { Console.WriteLine($"Server error: {ex.Message}"); }
         finally
         {
-            _cancellationTokenSource?.Cancel();
-            if (_engine is not null) await _engine.StopStreamingAsync();
-            try { await (_streamingTask ?? Task.CompletedTask); } catch (OperationCanceledException) { }
-            try { await Task.WhenAll(_listenerTask ?? Task.CompletedTask, _clientMonitorTask ?? Task.CompletedTask, _progressTask ?? Task.CompletedTask); } catch (OperationCanceledException) { }
-            Dispose();
+            _stop.Cancel();
+            if (_engine is not null) await ObserveShutdownAsync(_engine.StopStreamingAsync()).ConfigureAwait(false);
+            await ObserveShutdownAsync(Task.WhenAll(commands, streaming, state, progress, monitor)).ConfigureAwait(false);
+            ReleaseResources();
             Console.WriteLine("Server stopped.");
         }
+    }
+
+    private static async Task ObserveShutdownAsync(Task task)
+    {
+        try { await task.ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Console.WriteLine($"IPC shutdown: {ex.Message}"); }
     }
 
     private async Task MonitorClientAliveAsync(CancellationToken cancellationToken)
@@ -147,8 +125,11 @@ public class PlayerIpcService : IDisposable
 
     public void Stop()
     {
-        _cancellationTokenSource?.Cancel();
-
+        lock (_lifecycleGate)
+        {
+            _stopping = true;
+            if (_disposed == 0) _stop.Cancel();
+        }
     }
 
     private async Task PublishProgressAsync(CancellationToken token)
@@ -158,57 +139,15 @@ public class PlayerIpcService : IDisposable
         {
             do
             {
-                if (_engine!.TryCaptureProgress(out var snapshot)) _progressMailbox!.Publish(snapshot);
+                if (_engine!.TryCaptureProgress(out var snapshot)) _stateServer.PublishProgress(snapshot);
             } while (await timer.WaitForNextTickAsync(token));
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
     }
 
-    private void ListenForRequests(CancellationToken cancellationToken)
+    internal PipeResponse HandleCommand(CommandId commandId, ReadOnlySpan<byte> payload)
     {
-        Console.WriteLine("Listening for requests...");
-        WaitHandle[] waits = [cancellationToken.WaitHandle, _requestReadySemaphore!];
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                if (WaitHandle.WaitAny(waits) == 0) break;
-                if (cancellationToken.IsCancellationRequested) break;
-                if (_accessor == null) continue;
-
-                int version = IpcEnvelope.ReadVersion(_accessor, IpcConstants.RequestVersionOffset);
-                if (version == _lastRequestVersion) continue;
-                _lastRequestVersion = version;
-
-                byte sequenceId = IpcEnvelope.ReadSequenceId(_accessor, IpcConstants.RequestBufferOffset);
-
-                int payloadLen = IpcEnvelope.ReadPayload(
-                    _accessor, IpcConstants.RequestBufferOffset,
-                    _requestBuffer,
-                    IpcConstants.MaxRequestSize - IpcConstants.EnvelopeHeaderSize);
-
-                if (payloadLen < 0)
-                {
-                    WriteErrorResponse(ErrorCode.InvalidPayload, sequenceId);
-                    SignalResponseReady();
-                    continue;
-                }
-
-                var commandId = IpcEnvelope.ReadCommandId(_accessor, IpcConstants.RequestBufferOffset);
-                HandleCommand(commandId, _requestBuffer.AsSpan(0, payloadLen), sequenceId);
-            }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Request loop error: {ex.Message}");
-                if (cancellationToken.WaitHandle.WaitOne(500)) break;
-            }
-        }
-    }
-
-    private void HandleCommand(CommandId commandId, ReadOnlySpan<byte> payload, byte sequenceId)
-    {
-        WriteEmptyResponse(MessageTypeId.Success, sequenceId);
+        WriteEmptyResponse(MessageTypeId.Success);
         try
         {
             switch (commandId)
@@ -221,19 +160,19 @@ public class PlayerIpcService : IDisposable
                 }
                 case CommandId.PlayButton:
                     _engine!.PlayButton();
-                    WritePlayStateResponsePayload(_engine.IsPlaying, sequenceId);
+                    WritePlayStateResponsePayload(_engine.IsPlaying);
                     break;
                 case CommandId.SetMusicUrl:
                 {
                     var req = BinarySerializer.ReadSetMusicUrlRequest(payload);
                     _engine!.MusicUrl = req.Url ?? string.Empty;
-                    WriteEmptyResponse(MessageTypeId.Success, sequenceId);
+                    WriteEmptyResponse(MessageTypeId.Success);
                     break;
                 }
                 case CommandId.GetTimeProgress:
                 {
                     var (curMs, totalMs) = _engine!.GetTimeProgress();
-                    WriteTimeProgressPayload(curMs, totalMs, sequenceId);
+                    WriteTimeProgressPayload(curMs, totalMs);
                     break;
                 }
                 case CommandId.ChangePosition:
@@ -264,15 +203,14 @@ public class PlayerIpcService : IDisposable
                 {
                     var req = BinarySerializer.ReadUpdateEqRequest(payload);
                     var resp = _engine!.SetEqualizerState(req);
-                    WriteEqStateResponsePayload(resp, sequenceId);
+                    WriteEqStateResponsePayload(resp);
                     break;
                 }
                 case CommandId.UpdateDsp:
                     _engine!.UpdateDsp(DspProtocol.ReadSettings(payload));
                     break;
                 case CommandId.UpdateDeviceCorrections:
-                    using (var corrections = new DeviceCorrectionMailbox())
-                        _engine!.UpdateDeviceCorrections(corrections.Read());
+                    _engine!.UpdateDeviceCorrections(DeviceCorrectionProtocol.Read(payload));
                     break;
                 case CommandId.PreviewDsp:
                     _engine!.PreviewDsp(DspPreview.Read(payload));
@@ -281,37 +219,35 @@ public class PlayerIpcService : IDisposable
                 {
                     Span<byte> state = stackalloc byte[DspProtocol.StateSize];
                     DspProtocol.WriteState(state, _engine!.GetDspState());
-                    IpcEnvelope.WriteResponse(_accessor!, IpcConstants.ResponseBufferOffset,
-                        MessageTypeId.DspState, sequenceId, state, IpcConstants.MaxResponseSize);
+                    SetResponse(MessageTypeId.DspState, state);
                     break;
                 }
                 case CommandId.GetWasapiDevices:
                     HandleGetDevices(MessageTypeId.WasapiDevices, ref _cachedWasapiDevices,
-                        () => _engine!.GetWasapiDevices(), payload, sequenceId);
+                        () => _engine!.GetWasapiDevices(), payload);
                     break;
                 case CommandId.GetAsioDevices:
                     HandleGetDevices(MessageTypeId.AsioDevices, ref _cachedAsioDevices,
-                        () => _engine!.GetAsioDevices(), payload, sequenceId);
+                        () => _engine!.GetAsioDevices(), payload);
                     break;
                 default:
-                    WriteErrorResponse(ErrorCode.InvalidCommand, sequenceId);
+                    WriteErrorResponse(ErrorCode.InvalidCommand);
                     break;
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Command {commandId} failed: {ex.Message}");
-            WriteErrorResponse(ex is ArgumentException ? ErrorCode.InvalidPayload : ErrorCode.Unknown, sequenceId);
+            WriteErrorResponse(ex is ArgumentException ? ErrorCode.InvalidPayload : ErrorCode.Unknown);
         }
-        SignalResponseReady();
+        return new(_responseType, _responseBuffer.AsMemory(0, _responseLength));
     }
 
     private void HandleGetDevices(
         MessageTypeId typeId,
         ref (int id, string name, string endpoint)[]? cache,
         Func<(int id, string name, string endpoint)[]> enumerate,
-        ReadOnlySpan<byte> payload,
-        byte sequenceId)
+        ReadOnlySpan<byte> payload)
     {
         var req = BinarySerializer.ReadGetDevicesRequest(payload);
         if (req.Page == 0 || cache == null) cache = enumerate();
@@ -326,7 +262,7 @@ public class PlayerIpcService : IDisposable
         int end = Math.Min(start + perPage, total);
         int count = end - start;
 
-        int maxResp = IpcConstants.MaxResponseSize - IpcConstants.EnvelopeHeaderSize;
+        int maxResp = IpcConstants.MaxResponseSize;
         Span<byte> buf = stackalloc byte[maxResp];
         int offset = BinarySerializer.WriteDeviceListPageHeader(buf, req.Page, (byte)totalPages, (byte)count);
         for (int i = start; i < end; i++)
@@ -341,80 +277,60 @@ public class PlayerIpcService : IDisposable
                 offset += BinarySerializer.WriteDeviceEntry(buf[offset..], devices[i].id, devices[i].endpoint);
             }
         }
-        IpcEnvelope.WriteResponse(_accessor!, IpcConstants.ResponseBufferOffset, typeId, sequenceId, buf[..offset], IpcConstants.MaxResponseSize);
+        SetResponse(typeId, buf[..offset]);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WriteErrorResponse(ErrorCode code, byte sequenceId)
+    private void WriteErrorResponse(ErrorCode code)
     {
         Span<byte> buf = stackalloc byte[BinarySerializer.FailedResponseSize];
         var resp = new FailedResponse { Code = code };
         BinarySerializer.WriteFailedResponse(buf, resp);
-        IpcEnvelope.WriteResponse(_accessor!, IpcConstants.ResponseBufferOffset, MessageTypeId.Failed, sequenceId, buf, IpcConstants.MaxResponseSize);
+        SetResponse(MessageTypeId.Failed, buf);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WriteEmptyResponse(MessageTypeId typeId, byte sequenceId)
+    private void WriteEmptyResponse(MessageTypeId typeId)
     {
-        IpcEnvelope.WriteResponse(_accessor!, IpcConstants.ResponseBufferOffset, typeId, sequenceId, ReadOnlySpan<byte>.Empty, IpcConstants.MaxResponseSize);
+        SetResponse(typeId, ReadOnlySpan<byte>.Empty);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WriteTimeProgressPayload(long currentMs, long totalMs, byte sequenceId)
+    private void WriteTimeProgressPayload(long currentMs, long totalMs)
     {
         Span<byte> buf = stackalloc byte[BinarySerializer.TimeProgressSize];
         BinarySerializer.WriteTimeProgress(buf, currentMs, totalMs);
-        IpcEnvelope.WriteResponse(_accessor!, IpcConstants.ResponseBufferOffset, MessageTypeId.TimeProgress, sequenceId, buf, IpcConstants.MaxResponseSize);
+        SetResponse(MessageTypeId.TimeProgress, buf);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WritePlayStateResponsePayload(bool isPlaying, byte sequenceId)
+    private void WritePlayStateResponsePayload(bool isPlaying)
     {
         Span<byte> buf = stackalloc byte[BinarySerializer.PlayStateResponseSize];
         var resp = new PlayStateResponse { IsPlaying = isPlaying };
         BinarySerializer.WritePlayStateResponse(buf, resp);
-        IpcEnvelope.WriteResponse(_accessor!, IpcConstants.ResponseBufferOffset, MessageTypeId.PlayState, sequenceId, buf, IpcConstants.MaxResponseSize);
+        SetResponse(MessageTypeId.PlayState, buf);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WriteEqStateResponsePayload(EqStateResponse resp, byte sequenceId)
+    private void WriteEqStateResponsePayload(EqStateResponse resp)
     {
         Span<byte> buf = stackalloc byte[BinarySerializer.EqStateResponseSize];
         BinarySerializer.WriteEqStateResponse(buf, resp);
-        IpcEnvelope.WriteResponse(_accessor!, IpcConstants.ResponseBufferOffset, MessageTypeId.EqState, sequenceId, buf, IpcConstants.MaxResponseSize);
+        SetResponse(MessageTypeId.EqState, buf);
     }
 
-    private void SignalResponseReady()
+    private void SetResponse(MessageTypeId type, scoped ReadOnlySpan<byte> payload)
     {
-        if (_accessor == null) return;
-        int version = _lastRequestVersion; // 完整请求版本作为执行确认，避免 byte 序号回绕歧义。
-        IpcEnvelope.PublishVersion(_accessor, IpcConstants.ResponseVersionOffset, version);
-        try { _responseReadySemaphore!.Release(); }
-        catch (SemaphoreFullException) { }
+        payload.CopyTo(_responseBuffer);
+        _responseType = type;
+        _responseLength = payload.Length;
     }
 
-    internal void PublishDspState(DspState state) => _dspMailbox?.Publish(state);
+    internal void PublishDspState(DspState state) => _stateServer?.PublishDsp(state);
 
     public void SendNotification(MessageTypeId typeId, scoped ReadOnlySpan<byte> payload)
-    {
-        if (_accessor == null) return;
-        try
-        {
-            lock (_notificationLock)
-            {
-                int version = ++_notificationVersion;
-                long offset = IpcEnvelope.NotificationSlotOffset(version);
-                IpcEnvelope.WriteResponse(_accessor, offset, typeId, 0, payload, IpcConstants.MaxNotificationSize);
-                IpcEnvelope.PublishVersion(_accessor, IpcConstants.NotificationVersionOffset, version);
-                try { _notificationReadySemaphore!.Release(); }
-                catch (SemaphoreFullException) { }
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"SendNotification failed: {ex.Message}");
-        }
-    }
+        => _stateServer?.PublishNotification(typeId, payload);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void PlayStateUpdate(bool isPlaying)
@@ -433,18 +349,31 @@ public class PlayerIpcService : IDisposable
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposeStarted, 1) != 0) return;
-        _cancellationTokenSource?.Cancel();
-        _listenerTask?.GetAwaiter().GetResult();
-        _progressTask?.GetAwaiter().GetResult();
-        _engine?.Dispose();
-        _progressMailbox?.Dispose();
-        _dspMailbox?.Dispose();
-        _accessor?.Dispose();
-        _mmf?.Dispose();
-        _requestReadySemaphore?.Dispose();
-        _responseReadySemaphore?.Dispose();
-        _notificationReadySemaphore?.Dispose();
-        _cancellationTokenSource?.Dispose();
+        Task? running;
+        lock (_lifecycleGate)
+        {
+            _stopping = true;
+            if (_disposed == 0) _stop.Cancel();
+            running = _runTask;
+        }
+        running?.GetAwaiter().GetResult();
+        ReleaseResources();
+    }
+
+    private void ReleaseResources()
+    {
+        lock (_lifecycleGate)
+        {
+            if (_disposed != 0) return;
+            _disposed = 1;
+            try { _engine?.Dispose(); }
+            catch (Exception ex) { Console.WriteLine($"Engine shutdown: {ex.Message}"); }
+            finally
+            {
+                _stateServer.Dispose();
+                _instanceMutex?.Dispose();
+                _stop.Dispose();
+            }
+        }
     }
 }

@@ -1,13 +1,13 @@
-using System.IO.MemoryMappedFiles;
+using System.Collections.Concurrent;
 using BassPlayerIpc.Shared;
 
 // AudioPlayer（BassPlayerSharp 替代）AOT 版冒烟测试：
 // 充当主程序客户端：握手 IPC → SetMusicUrl → Play → 轮询进度 → EQ → 设备枚举 → MusicEnd。
-// 用法: AudioPlayerSmokeTest <AOT BassPlayerSharp.exe 路径> <音频文件路径> [持续秒数]
+// 用法: AudioPlayerSmokeTest <AOT AudioPlayer.exe 路径> <音频文件路径> [持续秒数]
 
 if (args.Length < 2)
 {
-    Console.WriteLine("用法: AudioPlayerSmokeTest <BassPlayerSharp.exe> <音频文件> [秒]");
+    Console.WriteLine("用法: AudioPlayerSmokeTest <AudioPlayer.exe> <音频文件> [秒]");
     return 2;
 }
 string exePath = Path.GetFullPath(args[0]);
@@ -32,33 +32,21 @@ using var server = System.Diagnostics.Process.Start(new System.Diagnostics.Proce
 })!;
 Console.WriteLine($"[smoke] server pid={server.Id}");
 
-// 3. 连接共享内存与信号量（与主程序 IpcService 相同的握手）
-MemoryMappedFile mmf;
-MemoryMappedViewAccessor accessor;
-for (int i = 0; ; i++)
-{
-    try
-    {
-        mmf = MemoryMappedFile.OpenExisting(IpcConstants.MmfName);
-        accessor = mmf.CreateViewAccessor(0, IpcConstants.MmfSize);
-        break;
-    }
-    catch
-    {
-        if (i > 100) { Console.WriteLine("[smoke] FAIL: MMF 未出现"); return 1; }
-        Thread.Sleep(100);
-    }
-}
-using var _a = accessor;
-using var _m = mmf;
-using var requestReady = Semaphore.OpenExisting(IpcConstants.RequestSemaphoreName);
-using var responseReady = Semaphore.OpenExisting(IpcConstants.ResponseSemaphoreName);
-using var notificationReady = Semaphore.OpenExisting(IpcConstants.NotificationSemaphoreName);
-Console.WriteLine("[smoke] IPC 握手完成");
-
-int lastNotificationVersion = accessor.ReadInt32(IpcConstants.NotificationVersionOffset);
+// 3. Connect both persistent pipes and verify they belong to the same player instance.
+using var connectTimeout = new CancellationTokenSource(10000);
+using var transport = PipeCommandClient.ConnectAsync(IpcConstants.ControlPipeName, connectTimeout.Token).GetAwaiter().GetResult();
+using var states = PipeStateClient.ConnectAsync(IpcConstants.StatePipeName, connectTimeout.Token).GetAwaiter().GetResult();
+if (transport.InstanceId != states.InstanceId) throw new InvalidOperationException("Player instance mismatch");
 int playbackEnds = 0;
-using var transport = new MailboxClient(accessor, requestReady, responseReady);
+var notifications = new ConcurrentQueue<MessageTypeId>();
+states.NotificationReceived += (type, _) =>
+{
+    if (type == MessageTypeId.PlayEnded) Interlocked.Increment(ref playbackEnds);
+    notifications.Enqueue(type);
+};
+states.Start();
+if (!SpinWait.SpinUntil(() => states.CurrentDspState is not null, 5000)) throw new InvalidOperationException("Initial DSP state missing");
+Console.WriteLine("[smoke] Pipe 握手及初始 DSP 推送完成");
 byte[] responseBuffer = new byte[IpcConstants.MaxResponseSize];
 
 MessageTypeId Send(CommandId cmd, ReadOnlySpan<byte> payload, out ReadOnlySpan<byte> respPayload)
@@ -70,13 +58,19 @@ MessageTypeId Send(CommandId cmd, ReadOnlySpan<byte> payload, out ReadOnlySpan<b
 
 void PumpNotifications()
 {
-    int v = accessor.ReadInt32(IpcConstants.NotificationVersionOffset);
-    if (v == lastNotificationVersion) return;
-    lastNotificationVersion = v;
-    long off = IpcEnvelope.NotificationSlotOffset(v);
-    var typeId = IpcEnvelope.ReadMessageTypeId(accessor, off);
-    if (typeId == MessageTypeId.PlayEnded) playbackEnds++;
-    Console.WriteLine($"[smoke] 通知: {typeId}");
+    while (notifications.TryDequeue(out var type)) Console.WriteLine($"[smoke] 通知: {type}");
+}
+
+void StopPlayer()
+{
+    transport.Dispose();
+    states.Dispose();
+    if (!server.WaitForExit(10000))
+    {
+        server.Kill();
+        server.WaitForExit();
+        throw new InvalidOperationException("Player did not exit after pipe disconnect");
+    }
 }
 
 Span<byte> urlBuf = new byte[BinarySerializer.SetMusicUrlRequestSize];
@@ -242,7 +236,7 @@ if (args.Contains("--trackchange"))
     Console.WriteLine("[smoke] 换曲 Play 已发送");
     for (int i = 0; i < 8; i++) { Thread.Sleep(400); t = Send(CommandId.GetTimeProgress, ReadOnlySpan<byte>.Empty, out var pr); if (t == MessageTypeId.TimeProgress) { var (c, tt) = BinarySerializer.ReadTimeProgress(pr); Console.WriteLine($"[smoke] 换曲后进度 {c / 1000.0:F1}s / {tt / 1000.0:F1}s"); } PumpNotifications(); }
     Send(CommandId.MusicEnd, ReadOnlySpan<byte>.Empty, out _);
-    server.Kill(); server.WaitForExit(2000);
+    StopPlayer();
     Console.WriteLine("[smoke] 换曲测试完成");
     return 0;
 }
@@ -261,6 +255,12 @@ for (int i = 0; i < runSeconds * 4; i++)
     PumpNotifications();
     Thread.Sleep(250);
 }
+
+if (!states.TryGetProgress(out var cachedProgress) || cachedProgress.TotalMs <= 0)
+    throw new InvalidOperationException("Progress push cache did not receive a complete snapshot");
+Console.WriteLine($"[smoke] 推送进度缓存: {cachedProgress.CurrentMs}/{cachedProgress.TotalMs}ms rev={cachedProgress.Revision}");
+t = Send(CommandId.UpdateDeviceCorrections, DeviceCorrectionProtocol.Write(new()), out _);
+if (t != MessageTypeId.Success) throw new InvalidOperationException("Device correction command failed");
 
 // seek 测试
 Span<byte> posBuf = new byte[BinarySerializer.ChangePositionRequestSize];
@@ -317,7 +317,6 @@ if (t == MessageTypeId.TimeProgress)
 }
 PumpNotifications();
 
-server.Kill();
-server.WaitForExit(3000);
+StopPlayer();
 Console.WriteLine("[smoke] 完成");
 return 0;

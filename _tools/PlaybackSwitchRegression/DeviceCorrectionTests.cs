@@ -40,19 +40,16 @@ internal static unsafe partial class Program
             Require(ReferenceEquals((bindings with { Enabled = false }).Resolve(global, "missing"), global), "legacy mode changed");
         });
 
-        Run("Device correction: atomic mailbox, persistence and invalid snapshot rejection", () =>
+        Run("Device correction: command payload, persistence and invalid snapshot rejection", () =>
         {
-            string name = "CorrectionTest-" + Guid.NewGuid().ToString("N");
-            using var writer = new DeviceCorrectionMailbox(name);
-            using var reader = new DeviceCorrectionMailbox(name);
-            writer.Publish(bindings);
-            Require(reader.Read().Resolve(global, "endpoint-a").CurvePoints == "20,-6;20000,-6", "snapshot lost");
-            try { writer.Publish(bindings with { Bindings = [bindings.Bindings[0], bindings.Bindings[0]] });
+            byte[] payload = DeviceCorrectionProtocol.Write(bindings);
+            Require(DeviceCorrectionProtocol.Read(payload).Resolve(global, "endpoint-a").CurvePoints == "20,-6;20000,-6", "snapshot lost");
+            try { DeviceCorrectionProtocol.Write(bindings with { Bindings = [bindings.Bindings[0], bindings.Bindings[0]] });
                 throw new Exception("duplicate identity accepted"); }
             catch (ArgumentException) { }
-            Require(reader.Read().Bindings.Length == 3, "invalid publication damaged previous snapshot");
-            writer.Publish(bindings with { Bindings = [] });
-            Require(!reader.Read().Resolve(global, "endpoint-a").ConvolutionEnabled, "remove did not reach reader");
+            Require(DeviceCorrectionProtocol.Read(payload).Bindings.Length == 3, "invalid publication damaged previous snapshot");
+            payload = DeviceCorrectionProtocol.Write(bindings with { Bindings = [] });
+            Require(!DeviceCorrectionProtocol.Read(payload).Resolve(global, "endpoint-a").ConvolutionEnabled, "remove did not reach reader");
             var json = System.Text.Json.JsonSerializer.Serialize(bindings, DeviceCorrectionJsonContext.Default.DeviceCorrections);
             var restored = System.Text.Json.JsonSerializer.Deserialize(json, DeviceCorrectionJsonContext.Default.DeviceCorrections)!;
             Require(restored.Enabled && restored.Bindings[2].DeviceId == "asio:driver-guid", "persistence lost ASIO identity");
@@ -223,10 +220,10 @@ internal static unsafe partial class Program
             data[30] = 1; data[31] = 1;
             try { DspProtocol.ReadState(data); throw new Exception("oversized device identity accepted"); }
             catch (ArgumentException) { }
-            using var mailbox = new DspStateMailbox(true, "CorrectionState-" + Guid.NewGuid().ToString("N"));
-            mailbox.Publish(state);
-            Require(mailbox.Publish(state with { OutputDeviceId = "endpoint-b" }), "device-only change was not published");
-            Require(mailbox.Read()!.State.OutputDeviceId == "endpoint-b", "new output state lost");
+            using var mailbox = new PipeStateServer();
+            mailbox.PublishDsp(state);
+            Require(mailbox.PublishDsp(state with { OutputDeviceId = "endpoint-b" }), "device-only change was not published");
+            Require(mailbox.CurrentDspState!.State.OutputDeviceId == "endpoint-b", "new output state lost");
         });
     }
 }

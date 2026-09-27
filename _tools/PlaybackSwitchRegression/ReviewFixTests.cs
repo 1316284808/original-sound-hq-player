@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO.MemoryMappedFiles;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -159,7 +158,7 @@ internal static unsafe partial class Program
         });
         Run("WASAPI: timed-out Initialize retires only after worker exits", CheckInitializeRetirement);
         Run("WASAPI: timed-out render retains client until thread exits", CheckRenderRetirement);
-        Run("IPC: timeout preserves slot and coalescing respects ordered barriers", CheckMailboxOrdering);
+        Run("IPC: timeout preserves execution order and coalescing respects ordered barriers", CheckPipeOrdering);
         Run("IPC: cross-process confirmed roundtrip latency", BenchmarkConfirmedIpc);
     }
 
@@ -205,31 +204,22 @@ internal static unsafe partial class Program
         Require(SpinWait.SpinUntil(() => Volatile.Read(ref _reviewNativeCalls) == 2, 2000), "render retirement never completed");
     }
 
-    private static void CheckMailboxOrdering()
+    private static void CheckPipeOrdering()
     {
-        using var mmf = MemoryMappedFile.CreateNew(null, IpcConstants.MmfSize);
-        using var view = mmf.CreateViewAccessor();
-        using var request = new Semaphore(0, 1); using var response = new Semaphore(0, 1);
-        using var stop = new ManualResetEvent(false); using var entered = new ManualResetEventSlim(false);
+        string name = "Ordering-" + Guid.NewGuid().ToString("N");
+        using var stop = new CancellationTokenSource();
+        using var entered = new ManualResetEventSlim(false);
         using var release = new ManualResetEventSlim(false);
         var seen = new List<(CommandId Command, double Volume)>();
-        var server = new Thread(() =>
+        int handled = 0;
+        var server = new PipeCommandServer(name, Guid.NewGuid(), (command, payload) =>
         {
-            WaitHandle[] waits = [stop, request]; byte[] payload = new byte[2048];
-            while (WaitHandle.WaitAny(waits) != 0)
-            {
-                int version = IpcEnvelope.ReadVersion(view, IpcConstants.RequestVersionOffset);
-                var command = IpcEnvelope.ReadCommandId(view, IpcConstants.RequestBufferOffset);
-                int size = IpcEnvelope.ReadPayload(view, IpcConstants.RequestBufferOffset, payload, 2043);
-                seen.Add((command, command == CommandId.ChangeVolume ? BinarySerializer.ReadChangeVolumeRequest(payload.AsSpan(0, size)).Volume : -1));
-                if (seen.Count == 1) { entered.Set(); release.Wait(); }
-                IpcEnvelope.WriteResponse(view, IpcConstants.ResponseBufferOffset, MessageTypeId.Success, (byte)version, [], 512);
-                IpcEnvelope.PublishVersion(view, IpcConstants.ResponseVersionOffset, version);
-                try { response.Release(); } catch (SemaphoreFullException) { }
-            }
-        }) { IsBackground = true };
-        server.Start();
-        using var client = new MailboxClient(view, request, response);
+            seen.Add((command, command == CommandId.ChangeVolume ? BinarySerializer.ReadChangeVolumeRequest(payload).Volume : -1));
+            if (Interlocked.Increment(ref handled) == 1) { entered.Set(); release.Wait(); }
+            return new(MessageTypeId.Success, ReadOnlyMemory<byte>.Empty);
+        }).RunAsync(stop.Token);
+        using var timeout = new CancellationTokenSource(5000);
+        using var client = PipeCommandClient.ConnectAsync(name, timeout.Token).GetAwaiter().GetResult();
         try
         {
             byte[] payload = new byte[8];
@@ -246,29 +236,28 @@ internal static unsafe partial class Program
             BinarySerializer.WriteChangeVolumeRequest(payload, new() { Volume = 0.3 });
             client.Publish(CommandId.ChangeVolume, payload, coalesce: true);
             var barrier = client.RequestAsync(CommandId.SetMusicUrl, [], []);
-            Require(IpcEnvelope.ReadVersion(view, IpcConstants.RequestVersionOffset) == 1, "timeout overwrote in-flight request");
+            Require(Volatile.Read(ref handled) == 1, "timeout advanced past in-flight execution");
             release.Set();
             Require(barrier.GetAwaiter().GetResult().Type == MessageTypeId.Success, "queue did not recover");
             Require(seen.Count == 5 && seen[1].Volume == 1 && seen[2].Command == CommandId.Play && seen[3].Volume == 0.3,
                 "coalescing dropped an ordered command or latest value");
         }
-        finally { release.Set(); client.Dispose(); stop.Set(); server.Join(); }
+        finally { release.Set(); client.Dispose(); stop.Cancel(); server.GetAwaiter().GetResult(); }
     }
 
     private static int IpcBenchmarkServer(string suffix)
     {
-        using var mmf = MemoryMappedFile.CreateNew("AudioReview-" + suffix, IpcConstants.MmfSize);
-        using var view = mmf.CreateViewAccessor();
-        using var request = new Semaphore(0, 1, "AudioReview-request-" + suffix);
-        using var response = new Semaphore(0, 1, "AudioReview-response-" + suffix);
         using var stop = new EventWaitHandle(false, EventResetMode.ManualReset, "AudioReview-stop-" + suffix);
         using var cancel = new CancellationTokenSource();
         var service = (PlayerIpcService)RuntimeHelpers.GetUninitializedObject(typeof(PlayerIpcService));
-        var engine = Engine("DirectSound"); Set(engine, "_streamLock", new object());
-        Set(service, "_engine", engine); Set(service, "_accessor", view); Set(service, "_requestReadySemaphore", request);
-        Set(service, "_responseReadySemaphore", response); Set(service, "_requestBuffer", new byte[2048]);
-        var listener = new Thread(() => Invoke(service, "ListenForRequests", cancel.Token)) { IsBackground = true };
-        listener.Start(); stop.WaitOne(); cancel.Cancel(); listener.Join();
+        var engine = Engine("DirectSound");
+        Set(engine, "_streamLock", new object());
+        Set(service, "_engine", engine);
+        Set(service, "_responseBuffer", new byte[IpcConstants.MaxResponseSize]);
+        var listener = new PipeCommandServer("AudioReview-" + suffix, Guid.NewGuid(), service.HandleCommand).RunAsync(cancel.Token);
+        stop.WaitOne();
+        cancel.Cancel();
+        listener.GetAwaiter().GetResult();
         return 0;
     }
 
@@ -278,7 +267,7 @@ internal static unsafe partial class Program
         var info = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
         info.ArgumentList.Add("--ipc-server"); info.ArgumentList.Add(suffix);
         using var process = Process.Start(info)!;
-        MemoryMappedFile? mmf = null; Semaphore? request = null, response = null; EventWaitHandle? stop = null;
+        EventWaitHandle? stop = null;
         try
         {
             for (int i = 0; i < 100 && stop == null; i++)
@@ -287,10 +276,8 @@ internal static unsafe partial class Program
                 catch (WaitHandleCannotBeOpenedException) { Thread.Sleep(20); }
             }
             Require(stop != null, "benchmark server did not start");
-            mmf = MemoryMappedFile.OpenExisting("AudioReview-" + suffix);
-            request = Semaphore.OpenExisting("AudioReview-request-" + suffix);
-            response = Semaphore.OpenExisting("AudioReview-response-" + suffix);
-            using var view = mmf.CreateViewAccessor(); using var client = new MailboxClient(view, request, response);
+            using var timeout = new CancellationTokenSource(5000);
+            using var client = PipeCommandClient.ConnectAsync("AudioReview-" + suffix, timeout.Token).GetAwaiter().GetResult();
             byte[] payload = new byte[8]; BinarySerializer.WriteChangeVolumeRequest(payload, new() { Volume = 0.5 });
             for (int i = 0; i < 200; i++) client.RequestAsync(CommandId.ChangeVolume, payload, []).GetAwaiter().GetResult();
             double[] elapsed = new double[5000]; var total = Stopwatch.StartNew();
@@ -328,7 +315,7 @@ internal static unsafe partial class Program
         {
             stop?.Set();
             if (!process.WaitForExit(3000)) process.Kill();
-            stop?.Dispose(); response?.Dispose(); request?.Dispose(); mmf?.Dispose();
+            stop?.Dispose();
         }
     }
 }

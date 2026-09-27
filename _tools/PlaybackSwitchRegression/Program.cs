@@ -52,6 +52,13 @@ internal static unsafe partial class Program
         }
         if (args.Length == 2 && args[0] == "--progress-writer") return ProgressWriter(args[1]);
         if (args.Length == 1 && args[0] == "--test-progress") { RunProgressTests(); return _failures == 0 ? 0 : 1; }
+        if (args.Length == 1 && args[0] == "--test-pipe")
+        {
+            RunPipeProtocolTests();
+            Run("IPC: ordered coalescing", CheckPipeOrdering);
+            Run("IPC: real cross-process command chain", BenchmarkConfirmedIpc);
+            return _failures == 0 ? 0 : 1;
+        }
         if (args.Length == 2 && args[0] == "--test-export-file")
         {
             FFmpeg.AutoGen.ffmpeg.RootPath = AppContext.BaseDirectory;
@@ -93,6 +100,7 @@ internal static unsafe partial class Program
         RunAtmosTests(root);
         RunAtmosAutomaticTests(root);
         RunProgressTests();
+        RunPipeProtocolTests();
         RunWavPackTests();
         RunBufferPolicyTests();
         RunAsioNotificationTests();

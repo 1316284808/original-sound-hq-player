@@ -19,7 +19,7 @@ internal static class NativePlaybackProbe
         player.Start();
         var output = player.StandardOutput.ReadToEndAsync();
         var errors = player.StandardError.ReadToEndAsync();
-        var client = new StreamingClient();
+        using var client = new StreamingClient();
         var id = Guid.NewGuid();
         try
         {

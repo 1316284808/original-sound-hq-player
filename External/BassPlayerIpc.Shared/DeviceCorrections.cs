@@ -1,4 +1,3 @@
-using System.IO.MemoryMappedFiles;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -61,64 +60,22 @@ public sealed record DeviceCorrections
     }
 }
 
-/// <summary>独立配置邮箱：避免设备集合超出 2 KB 命令槽；完整快照在互斥锁内发布。</summary>
-public sealed class DeviceCorrectionMailbox : IDisposable
+/// <summary>Complete validated configuration travels inside its command, including the execution acknowledgement.</summary>
+public static class DeviceCorrectionProtocol
 {
-    public const string Name = "AudioPlayer_DeviceCorrections_v1";
-    private const int Capacity = 256 * 1024;
-    private readonly MemoryMappedFile _memory;
-    private readonly MemoryMappedViewAccessor _view;
-    private readonly Mutex _mutex;
-
-    public DeviceCorrectionMailbox(string name = Name)
-    {
-        _memory = MemoryMappedFile.CreateOrOpen(name, Capacity + sizeof(int));
-        _view = _memory.CreateViewAccessor();
-        _mutex = new Mutex(false, name + "_Lock");
-    }
-
-    private void Enter()
-    {
-        try { if (!_mutex.WaitOne(1000)) throw new TimeoutException("Device correction mailbox timed out."); }
-        catch (AbandonedMutexException)
-        {
-            _view.Write(0, 0);
-            _mutex.ReleaseMutex();
-            throw new InvalidOperationException("Device correction writer exited.");
-        }
-    }
-
-    public void Publish(DeviceCorrections settings)
+    public static byte[] Write(DeviceCorrections settings)
     {
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(settings.Validate(), DeviceCorrectionJsonContext.Default.DeviceCorrections);
-        if (bytes.Length > Capacity) throw new ArgumentException("Device corrections exceed mailbox capacity.");
-        Enter();
-        try
-        {
-            _view.Write(0, 0);
-            _view.WriteArray(sizeof(int), bytes, 0, bytes.Length);
-            _view.Write(0, bytes.Length);
-        }
-        finally { _mutex.ReleaseMutex(); }
+        if (bytes.Length > IpcConstants.MaxPayloadSize) throw new ArgumentException("Device corrections exceed IPC capacity.");
+        return bytes;
     }
 
-    public DeviceCorrections Read()
+    public static DeviceCorrections Read(ReadOnlySpan<byte> bytes)
     {
-        byte[] bytes;
-        Enter();
-        try
-        {
-            int length = _view.ReadInt32(0);
-            if (length <= 0 || length > Capacity) throw new InvalidDataException("Invalid correction mailbox.");
-            bytes = new byte[length];
-            _view.ReadArray(sizeof(int), bytes, 0, length);
-        }
-        finally { _mutex.ReleaseMutex(); }
-        return JsonSerializer.Deserialize(bytes, DeviceCorrectionJsonContext.Default.DeviceCorrections)
-            ?? throw new InvalidDataException();
+        if (bytes.IsEmpty || bytes.Length > IpcConstants.MaxPayloadSize) throw new InvalidDataException("Invalid device correction payload.");
+        return (JsonSerializer.Deserialize(bytes, DeviceCorrectionJsonContext.Default.DeviceCorrections)
+            ?? throw new InvalidDataException("Empty device correction payload.")).Validate();
     }
-
-    public void Dispose() { _mutex.Dispose(); _view.Dispose(); _memory.Dispose(); }
 }
 
 [JsonSerializable(typeof(DeviceCorrections))]

@@ -4,24 +4,36 @@
 
 原音 HQ 播放器的播放引擎，一个独立于 UI 的 AOT 单文件进程：FFmpeg 解码 +
 自研 WASAPI/ASIO 互操作，与主程序经 `External\BassPlayerIpc.Shared` 的
-IPC 契约通信（信封/序列化逐字节兼容；命名对象 `AudioPlayer_SharedMemory` /
-`AudioPlayer_RequestReady` / `AudioPlayer_ResponseReady` /
-`AudioPlayer_NotificationReady` / `AudioPlayer_SingleInstanceMutex`，
-客户端存活互斥体 `WinUIMusicPlayer_SingleInstanceMutex`）。
+IPC 契约通信。数据通道统一为当前用户的持久 Named Pipe，使用 Byte 模式和
+24 字节固定帧头（魔数、版本、消息种类、64 位请求 ID、类型、载荷长度），握手返回
+播放进程实例 ID；主程序同时校验命令与状态通道属于同一实例。
 
-前身是 bass.dll 系（bass/basswasapi/bassasio/bassdsd/bass_fx），已完全移除；
-架构上仍保留与 bass IPC 面的逐一对应（见文末映射表），便于行为对照。
+- `OriginalSound_Audio_Control_v2`：常规命令/响应；单连接按顺序执行并确认。
+- `OriginalSound_Audio_State_v2`：进度和 DSP 最新快照，以及有序的播放状态/结束通知。
+- `OriginalSound_Audio_Streaming_v2`：流媒体控制；四条按需建立的持久连接分离状态查询、
+  准备、seek/refresh 与播放/暂停/停止，避免慢操作占用所有控制通道。
 
-命令链路经共享库的 `MailboxClient`：单后台发送线程串行投递，服务端回显请求
-版本作为执行确认，确认前不复用请求槽；音量/EQ/DSP 等高频可合并命令仅保留
-最新值，Play/Seek/设备设置与响应型请求构成有序屏障。
+命名均支持 `ORIGINALSOUND_IPC_SCOPE` 测试隔离。单实例与主程序存活检测仍使用
+`AudioPlayer_SingleInstanceMutex` / `WinUIMusicPlayer_SingleInstanceMutex`；不再使用 MMF 或通信信号量。
+
+共享库 `PipeCommandClient` 提供有界命令队列。音量/EQ/DSP 只在相邻可合并命令内保留
+最新值，Play/Seek/设备设置与响应型请求构成有序屏障。等待超时或取消不代表执行取消，
+迟到确认不会写入调用者已释放的缓冲，也不会自动重放命令。
+
+进度每 50 ms 推送，客户端从本地缓存读取；发送端只保存一份待发进度和 DSP 快照。
+关键事件独立排队，溢出显式关闭连接。所有 IPC I/O 均在控制/后台线程执行。
+普通命令最大 2 KiB，设备校正完整配置最大 256 KiB，流媒体描述符最大 128 KiB；
+二进制载荷沿用原序列化，低频结构化配置使用源生成 JSON。
+
+主程序与 `Player/AudioPlayer.exe` 必须同时更新；新传输不兼容旧 MMF 协议。
+前身的 bass.dll 系已完全移除，文末保留历史功能映射以便行为对照。
 
 ## 架构
 
 ```
 AudioPlayer.exe（NativeAOT 单文件，win-x64）
 ├── Program.cs                入口：SustainedLowLatency + timeBeginPeriod(1) + IPC 服务
-├── PlayerIpcService.cs       MMF + 信号量 IPC 面（命令/响应/通知三通道）
+├── PlayerIpcService.cs       持久 Named Pipe 服务与播放引擎生命周期
 ├── Decode/
 │   ├── PcmDecoder.cs         FFmpeg 解码 → swresample → float64 交织
 │   │                         （PCM 与 DSD→PCM 统一路径；DSD 输出率 = DSD/8，可重采样到 DsdPcmFreq）
@@ -196,10 +208,10 @@ IPC 在旧 41 字节（开关+增益）后追加 10 个 float32 Q，现为 81 �
 
 ## HTTP(S) 网络播放与 WebDAV 接入准备
 
-网络控制复用 `BassPlayerIpc.Shared.StreamingClient`，通过独立、限长（128 KiB）的当前用户命名管道发送描述符，不占用旧共享内存的 2 KiB 请求槽。旧本地播放入口保持兼容。此阶段提供有限长度 HTTP(S) 音频的 PCM 播放；不包含 WebDAV 目录浏览、账号管理、直播、HLS、DRM 或网络 DSD/Atmos 位流直通。
+网络控制使用 `BassPlayerIpc.Shared.StreamingClient`，通过独立、限长（128 KiB）的持久命名管道发送描述符，共用 v2 分帧与确认协议。本地播放保留独立的有序命令通道。此阶段提供有限长度 HTTP(S) 音频的 PCM 播放；不包含 WebDAV 目录浏览、账号管理、直播、HLS、DRM 或网络 DSD/Atmos 位流直通。
 
 ```csharp
-var client = new StreamingClient();
+using var client = new StreamingClient();
 var id = Guid.NewGuid();
 var source = new PlaybackSource
 {

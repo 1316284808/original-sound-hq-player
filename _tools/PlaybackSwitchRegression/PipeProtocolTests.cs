@@ -1,0 +1,252 @@
+using System.Buffers.Binary;
+using System.IO.Pipes;
+using BassPlayerIpc.Shared;
+
+internal static unsafe partial class Program
+{
+    private static void RunPipeProtocolTests()
+    {
+        Run("Pipe: partial/adjacent frames and malformed input", () => PipeChecks.FramingAsync().GetAwaiter().GetResult());
+        Run("Pipe: abandoned replies cannot overwrite released buffers", () => PipeChecks.AbandonedRepliesAsync().GetAwaiter().GetResult());
+        Run("Pipe: disconnect completes all outstanding requests", () => PipeChecks.DisconnectAsync().GetAwaiter().GetResult());
+        Run("Pipe: queue capacity and in-flight disposal", () => PipeChecks.QueueAndShutdownAsync().GetAwaiter().GetResult());
+        Run("Pipe: 256 KiB configuration is one acknowledged command", () => PipeChecks.LargePayloadAsync().GetAwaiter().GetResult());
+        Run("Pipe: invalid handshake permits subsequent connection", () => PipeChecks.HandshakeAsync().GetAwaiter().GetResult());
+        Run("Pipe: stalled subscriber retains final state and every critical event", () => PipeChecks.StateBackpressureAsync().GetAwaiter().GetResult());
+        Run("Pipe: critical event overflow fails explicitly", () => PipeChecks.StateOverflowAsync().GetAwaiter().GetResult());
+        Run("Pipe: connection cancellation and stop before listeners start", () => PipeChecks.StartupShutdownAsync().GetAwaiter().GetResult());
+    }
+}
+
+internal static class PipeChecks
+{
+    private static void Check(bool value, string message) { if (!value) throw new Exception(message); }
+    private static string Name() => "PipeRegression-" + Guid.NewGuid().ToString("N");
+    private static async Task UntilAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(5000);
+        while (!condition()) await Task.Delay(1, timeout.Token);
+    }
+    private static async Task ExpectAsync<T>(Func<Task> action) where T : Exception
+    {
+        try { await action(); } catch (T) { return; }
+        throw new Exception($"Expected {typeof(T).Name}");
+    }
+    private sealed class FragmentedStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken token = default)
+            => base.ReadAsync(buffer[..Math.Min(3, buffer.Length)], token);
+    }
+    public static async Task FramingAsync()
+    {
+        using var bytes = new MemoryStream();
+        var writer = new PipeFrameWriter();
+        byte[] payload = Enumerable.Range(0, 1024).Select(i => (byte)i).ToArray();
+        await writer.WriteAsync(bytes, PipeFrameKind.Request, 123, 7, payload, default);
+        await writer.WriteAsync(bytes, PipeFrameKind.Response, 124, 2, ReadOnlyMemory<byte>.Empty, default);
+        byte[] valid = bytes.ToArray();
+        using var fragmented = new FragmentedStream(valid);
+        using var reader = new PipeFrameReader();
+        var first = await reader.ReadAsync(fragmented, default);
+        Check(first.Id == 123 && first.Payload.Span.SequenceEqual(payload), "fragmented payload lost");
+        var second = await reader.ReadAsync(fragmented, default);
+        Check(second.Id == 124 && second.Kind == PipeFrameKind.Response && second.Payload.IsEmpty, "adjacent frame lost");
+        foreach (int length in new[] { -1, IpcConstants.MaxPayloadSize + 1 })
+        {
+            byte[] header = valid[..PipeProtocol.HeaderSize];
+            BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(20), length);
+            await ExpectAsync<InvalidDataException>(async () => await reader.ReadAsync(new MemoryStream(header), default));
+        }
+        byte[] wrongVersion = valid[..PipeProtocol.HeaderSize];
+        wrongVersion[4]++;
+        await ExpectAsync<InvalidDataException>(async () => await reader.ReadAsync(new MemoryStream(wrongVersion), default));
+        await ExpectAsync<EndOfStreamException>(async () => await reader.ReadAsync(new FragmentedStream(valid[..30]), default));
+    }
+    public static async Task AbandonedRepliesAsync()
+    {
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var stop = new CancellationTokenSource(15000);
+        int count = 0;
+        string name = Name();
+        var server = new PipeCommandServer(name, Guid.NewGuid(), (_, _) =>
+        {
+            if (Interlocked.Increment(ref count) <= 2) { entered.Set(); release.Wait(stop.Token); }
+            return new(MessageTypeId.Success, new byte[] { 1, 2, 3, 4 });
+        }).RunAsync(stop.Token);
+        await using var client = await PipeCommandClient.ConnectAsync(name, stop.Token);
+        try
+        {
+            byte[] buffer = new byte[4];
+            var timed = client.RequestAsync(CommandId.PlayButton, [], buffer, timeoutMs: 30);
+            await UntilAsync(() => entered.IsSet);
+            Check((await timed).Type == MessageTypeId.Failed, "timeout missing");
+            buffer.AsSpan().Fill(99);
+            release.Set();
+            Check((await client.RequestAsync(CommandId.GetDspState, [], new byte[4])).Type == MessageTypeId.Success, "barrier failed");
+            Check(buffer.All(x => x == 99), "late timed-out reply modified caller storage");
+            entered.Reset(); release.Reset(); Interlocked.Exchange(ref count, 0);
+            using var cancelled = new CancellationTokenSource();
+            var first = client.RequestAsync(CommandId.PlayButton, [], buffer, token: cancelled.Token);
+            await UntilAsync(() => entered.IsSet);
+            using var queuedCancellation = new CancellationTokenSource();
+            var queued = client.RequestAsync(CommandId.MusicEnd, [], [], token: queuedCancellation.Token);
+            queuedCancellation.Cancel(); cancelled.Cancel();
+            await ExpectAsync<OperationCanceledException>(async () => await first);
+            await ExpectAsync<OperationCanceledException>(async () => await queued);
+            buffer.AsSpan().Fill(77);
+            var next = client.RequestAsync(CommandId.PlayButton, [], new byte[4]);
+            Check(Volatile.Read(ref count) == 1, "cancellation advanced past running command");
+            release.Set();
+            Check((await next).Type == MessageTypeId.Success && count == 2, "queued cancellation lost later command");
+            Check(buffer.All(x => x == 77), "late cancelled reply modified caller storage");
+        }
+        finally { release.Set(); stop.Cancel(); await client.DisposeAsync(); await server; }
+    }
+    public static async Task DisconnectAsync()
+    {
+        string name = Name();
+        using var timeout = new CancellationTokenSource(5000);
+        var server = Task.Run(async () =>
+        {
+            using var pipe = PipeProtocol.CreateServer(name);
+            await PipeProtocol.AcceptAsync(pipe, Guid.NewGuid(), timeout.Token);
+            using var reader = new PipeFrameReader();
+            await reader.ReadAsync(pipe, timeout.Token);
+        });
+        await using var client = await PipeCommandClient.ConnectAsync(name, timeout.Token);
+        var requests = Enumerable.Range(0, 20).Select(_ => client.RequestAsync(CommandId.PlayButton, [], [])).ToArray();
+        var replies = await Task.WhenAll(requests).WaitAsync(timeout.Token);
+        Check(replies.All(x => x.Type == MessageTypeId.Failed), "disconnect left requests unresolved");
+        Check(!client.IsConnected && !client.Publish(CommandId.Play, []), "disconnected client accepted a command");
+        await server;
+    }
+    public static async Task QueueAndShutdownAsync()
+    {
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var stop = new CancellationTokenSource(15000);
+        string name = Name();
+        var server = new PipeCommandServer(name, Guid.NewGuid(), (_, _) =>
+        {
+            entered.Set(); release.Wait(stop.Token);
+            return new(MessageTypeId.Success, ReadOnlyMemory<byte>.Empty);
+        }).RunAsync(stop.Token);
+        await using var client = await PipeCommandClient.ConnectAsync(name, stop.Token);
+        try
+        {
+            var pending = client.RequestAsync(CommandId.PlayButton, [], []);
+            await UntilAsync(() => entered.IsSet);
+            for (int i = 0; i < 512; i++) Check(client.Publish(CommandId.PlayButton, []), "queue limit smaller than expected");
+            Check(!client.Publish(CommandId.PlayButton, []), "queue is unbounded");
+            await client.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+            Check((await pending).Type == MessageTypeId.Failed, "disposal did not complete pending call");
+        }
+        finally { release.Set(); stop.Cancel(); await server; }
+    }
+    public static async Task LargePayloadAsync()
+    {
+        using var stop = new CancellationTokenSource(5000);
+        string name = Name();
+        byte[] payload = new byte[IpcConstants.MaxPayloadSize];
+        Random.Shared.NextBytes(payload);
+        var server = new PipeCommandServer(name, Guid.NewGuid(), (command, data) =>
+        {
+            Check(command == CommandId.UpdateDeviceCorrections && data.SequenceEqual(payload), "large configuration torn");
+            return new(MessageTypeId.Success, ReadOnlyMemory<byte>.Empty);
+        }).RunAsync(stop.Token);
+        await using var client = await PipeCommandClient.ConnectAsync(name, stop.Token);
+        try { Check((await client.RequestAsync(CommandId.UpdateDeviceCorrections, payload, [])).Type == MessageTypeId.Success, "large command failed"); }
+        finally { stop.Cancel(); await client.DisposeAsync(); await server; }
+    }
+    public static async Task HandshakeAsync()
+    {
+        using var stop = new CancellationTokenSource(5000);
+        string name = Name();
+        Guid instance = Guid.NewGuid();
+        var server = new PipeCommandServer(name, instance, (_, _) => new(MessageTypeId.Success, ReadOnlyMemory<byte>.Empty)).RunAsync(stop.Token);
+        try
+        {
+            using (var invalid = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous))
+            {
+                await invalid.ConnectAsync(stop.Token);
+                await invalid.WriteAsync(new byte[PipeProtocol.HeaderSize], stop.Token);
+                Check(await invalid.ReadAsync(new byte[1], stop.Token) == 0, "bad version remained connected");
+            }
+            await using var client = await PipeCommandClient.ConnectAsync(name, stop.Token);
+            Check(client.InstanceId == instance, "instance handshake lost");
+            Check((await client.RequestAsync(CommandId.Play, [], [])).Type == MessageTypeId.Success, "failed handshake poisoned server");
+        }
+        finally { stop.Cancel(); await server; }
+    }
+    public static async Task StateBackpressureAsync()
+    {
+        string name = Name();
+        using var stop = new CancellationTokenSource(10000);
+        using var publisher = new PipeStateServer();
+        var server = publisher.RunAsync(name, Guid.NewGuid(), stop.Token);
+        await using var client = await PipeStateClient.ConnectAsync(name, stop.Token);
+        var events = new List<int>();
+        client.NotificationReceived += (_, bytes) => { lock (events) events.Add(BinaryPrimitives.ReadInt32LittleEndian(bytes.Span)); };
+        try
+        {
+            for (int i = 1; i <= 20000; i++)
+            {
+                publisher.PublishProgress(new(0, 3, i, i * 2, i * 3, true, i * 4));
+                publisher.PublishDsp(new DspState(0, false, 2, LoudnessStatus.Off, i, 0));
+                if (i % 400 == 0)
+                {
+                    byte[] payload = new byte[4];
+                    BinaryPrimitives.WriteInt32LittleEndian(payload, i / 400);
+                    publisher.PublishNotification(MessageTypeId.PlayEnded, payload);
+                }
+            }
+            client.Start();
+            await UntilAsync(() => client.TryGetProgress(out var value) && value.CurrentMs == 20000
+                && client.CurrentDspState?.Revision == 20000 && CountEvents() == 50);
+            lock (events) Check(events.SequenceEqual(Enumerable.Range(1, 50)), "critical event order changed");
+            Check(client.TryGetProgress(out var snapshot) && snapshot.TotalMs == 40000 && snapshot.SeekId == 80000, "snapshot torn");
+        }
+        finally
+        {
+            stop.Cancel(); await client.DisposeAsync();
+            try { await server; } catch (OperationCanceledException) { }
+        }
+        int CountEvents() { lock (events) return events.Count; }
+    }
+    public static async Task StateOverflowAsync()
+    {
+        string name = Name();
+        using var stop = new CancellationTokenSource(5000);
+        using var publisher = new PipeStateServer();
+        var server = publisher.RunAsync(name, Guid.NewGuid(), stop.Token);
+        await using var client = await PipeStateClient.ConnectAsync(name, stop.Token);
+        // Keep the subscriber connected without reading; overflow must interrupt a blocked pipe write.
+        for (int i = 0; i < 4096; i++) publisher.PublishNotification(MessageTypeId.PlayEnded, []);
+        await ExpectAsync<IOException>(async () => await server.WaitAsync(stop.Token));
+    }
+
+    public static async Task StartupShutdownAsync()
+    {
+        using (var cancelled = new CancellationTokenSource(30))
+            await ExpectAsync<OperationCanceledException>(async () => await PipeCommandClient.ConnectAsync(Name(), cancelled.Token));
+        using (var cancelled = new CancellationTokenSource(30))
+            await ExpectAsync<OperationCanceledException>(async () => await PipeStateClient.ConnectAsync(Name(), cancelled.Token));
+        using var timeout = new CancellationTokenSource(5000);
+        using var publisher = new PipeStateServer();
+        string name = Name();
+        var server = publisher.RunAsync(name, Guid.NewGuid(), timeout.Token);
+        await using (var client = await PipeStateClient.ConnectAsync(name, timeout.Token))
+        {
+            // Initialization may be cancelled after the handshake but before Start subscribes.
+            await client.DisposeAsync();
+            await client.DisposeAsync();
+        }
+        await ExpectAsync<IOException>(async () => await server.WaitAsync(timeout.Token));
+        var player = new AudioPlayer.PlayerIpcService();
+        player.Dispose();
+        player.Stop();
+        player.Dispose();
+        await ExpectAsync<ObjectDisposedException>(() => player.StartAsync());
+    }
+}

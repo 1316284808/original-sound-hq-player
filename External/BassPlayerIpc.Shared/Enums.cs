@@ -31,6 +31,7 @@ public enum CommandId : short
     GetDspState = 20,
     UpdateDeviceCorrections = 21,
     PreviewDsp = 22,
+    StreamControl = 23,
 }
 
 public enum MessageTypeId : short

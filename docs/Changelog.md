@@ -2,6 +2,14 @@
 
 新条目加在最上方。
 
+## 2026-09-27 AudioPlayer IPC 统一为持久 Named Pipe
+
+- `External/BassPlayerIpc.Shared`：移除命令、进度、DSP 和设备校正的 MMF/信号量实现；统一版本化分帧、实例握手、有序确认、有界队列与取消/迟到响应的缓冲所有权。
+- `External/AudioPlayer/PlayerIpcService.cs`、`StreamingServer.cs`、`Services/IpcService.cs`：常规命令与流媒体控制独立执行，进度/DSP 推送到本地缓存；关键通知保序，断开及退出等待在途 I/O 后释放资源。
+- `External/BassPlayerIpc.Shared/Streaming.cs`、`Services/RemotePlaybackService.cs`：流媒体控制复用持久连接，分离状态查询、准备、seek/refresh 与播放控制；会话停止时关闭连接，不自动重放失败命令。
+- `Player/AudioPlayer.exe`、播放端说明文档：更新 NativeAOT 分发产物；主程序与播放端必须同时更新，不兼容旧 MMF 传输，存量音频设置保持原格式。
+- `_tools/PlaybackSwitchRegression`、`AudioPlayerSmokeTest`、`RemotePlaybackRegression`：迁移 IPC 用例并覆盖分帧、超时/取消、队列背压、跨进程快照与断开退出；305 项播放回归、远程恢复回归、真实 NativeAOT HTTP/DSF 集成及 WASAPI 共享输出冒烟通过。未执行 WinUI 交互、ASIO/独占硬件验证。
+
 ## 2026-09-26 旋转网格背景模糊随窗口尺寸缩放
 
 - `External/AnimatedWin2dControls/AnimatedWin2dControls/Renderer/Background/RotatingMeshBackgroundRenderer.cs`：模糊半径按画布面积的平方根（几何平均边长）同比缩放，以 1920×1080 时的原有效果为基准，避免小窗口过度模糊；横竖屏同面积下模糊强度一致，按宽度缩放会导致竖屏相对失准。裁切、网格和其他渲染参数保持不变。

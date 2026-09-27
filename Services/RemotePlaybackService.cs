@@ -339,6 +339,7 @@ public sealed class RemotePlaybackService(WebDavLibraryService library, WebDavTr
             finally
             {
                 _bridge = null;
+                await _client.DisconnectAsync().ConfigureAwait(false);
                 lock (_gate)
                 {
                     _sessionCancel?.Dispose();

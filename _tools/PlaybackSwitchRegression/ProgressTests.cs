@@ -8,8 +8,16 @@ internal static unsafe partial class Program
 
     private static int ProgressWriter(string name)
     {
-        using var writer = new ProgressMailbox(true, name);
-        for (int i = 1; i <= 20000; i++) writer.Publish(new(0, 7, i, i * 2, i * 3, true, i * 4));
+        using var writer = new PipeStateServer();
+        using var timeout = new CancellationTokenSource(15000);
+        var server = writer.RunAsync(name, Guid.NewGuid(), timeout.Token);
+        for (int i = 1; i <= 20000; i++)
+        {
+            writer.PublishProgress(new(0, 7, i, i * 2, i * 3, true, i * 4));
+            if (i % 100 == 0) Thread.Sleep(1);
+        }
+        try { server.GetAwaiter().GetResult(); }
+        catch (IOException) { }
         return 0;
     }
 
@@ -100,25 +108,27 @@ internal static unsafe partial class Program
             Require(engine.TryCaptureProgress(out var after) && after.Epoch != before.Epoch
                 && after.CurrentMs == 1500 && after.SeekId == 8, "seek snapshot is stale or incoherent");
         });
-        Run("Progress: cross-process latest mailbox never exposes torn snapshots", () =>
+        Run("Progress: cross-process latest pipe cache never exposes torn snapshots", () =>
         {
             string name = "ProgressTest-" + Guid.NewGuid().ToString("N");
-            using var reader = new ProgressMailbox(true, name);
-            Require(!reader.TryRead(out _), "unpublished mailbox is valid");
             var info = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true };
             info.ArgumentList.Add("--progress-writer"); info.ArgumentList.Add(name);
             using var process = Process.Start(info)!;
             try
             {
+                using var connect = new CancellationTokenSource(5000);
+                using var reader = PipeStateClient.ConnectAsync(name, connect.Token).GetAwaiter().GetResult();
+                reader.Start();
                 long revision = 0, last = 0;
                 var timeout = Stopwatch.StartNew();
                 while (last < 20000 && timeout.ElapsedMilliseconds < 15000)
                 {
-                    if (!reader.TryRead(out var snapshot)) { Thread.Yield(); continue; }
+                    if (!reader.TryGetProgress(out var snapshot)) { Thread.Yield(); continue; }
                     Require(snapshot.Revision >= revision && snapshot.Epoch == 7 && snapshot.TotalMs == snapshot.CurrentMs * 2
                         && snapshot.Timestamp == snapshot.CurrentMs * 3 && snapshot.SeekId == snapshot.CurrentMs * 4, "torn or regressing snapshot");
                     revision = snapshot.Revision; last = snapshot.CurrentMs;
                 }
+                reader.Dispose();
                 Require(last == 20000 && process.WaitForExit(5000) && process.ExitCode == 0, "latest snapshot lost");
             }
             finally { if (!process.HasExited) { process.Kill(); process.WaitForExit(); } }

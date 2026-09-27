@@ -94,7 +94,7 @@ internal static unsafe partial class Program
                 CurvePoints = "20,0;100,3;20000,-2", AutoConvolutionHeadroom = false };
             byte[] bytes = new byte[DspProtocol.SettingsSize]; DspProtocol.WriteSettings(bytes, settings);
             Require(DspProtocol.ReadSettings(bytes) == settings, "Curve settings round-trip failed");
-            Require(bytes.Length + IpcConstants.EnvelopeHeaderSize <= IpcConstants.MaxRequestSize, "Curve request exceeds IPC slot");
+            Require(bytes.Length <= IpcConstants.MaxRequestSize, "Curve request exceeds IPC payload limit");
             bytes[1082] = 33;
             bool rejected = false;
             try { DspProtocol.ReadSettings(bytes); } catch (ArgumentException) { rejected = true; }
