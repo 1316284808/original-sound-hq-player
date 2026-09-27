@@ -27,6 +27,7 @@ internal static class Regression
 {
     public static async Task RunAsync()
     {
+        await CacheSizeRegression.RunAsync();
         using var test = new Scenario();
         var current = new Music(1);
         var offline = new Music(2, 10);

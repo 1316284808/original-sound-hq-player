@@ -1643,7 +1643,7 @@
     <value>Aviso legal</value>
   </data>
   <data name="ClearCoverCacheButton.Content" xml:space="preserve">
-    <value>Vaciar caché</value>
+    <value>Borrar caché de portadas</value>
   </data>
   <data name="AreUSureClearCoverCache" xml:space="preserve">
     <value>¿Vaciar la caché de portadas?</value>
@@ -2172,7 +2172,7 @@
     <value>Guarda el audio original que reproduces. Elimina entradas antiguas al alcanzar el límite. Desactivarlo detiene las descargas; la caché completa sigue disponible.</value>
   </data>
   <data name="WebDavClearCacheButton.Content" xml:space="preserve">
-    <value>Vaciar caché</value>
+    <value>Borrar caché de reproducción</value>
   </data>
   <data name="MusicSources.Text" xml:space="preserve"><value>Fuentes de música</value></data>
   <data name="WebDavPauseMenu.Text" xml:space="preserve"><value>Pausar exploración</value></data>
@@ -2304,4 +2304,7 @@ SHA-256: {5}
   <data name="WindowBackgroundClear" xml:space="preserve"><value>Borrar imagen</value></data>
   <data name="WindowBackgroundBlur" xml:space="preserve"><value>Desenfoque</value></data>
   <data name="WindowBackgroundLoadError" xml:space="preserve"><value>No se puede cargar la imagen de fondo. Elige una imagen JPG, PNG, BMP o WebP accesible.</value></data>
+  <data name="CacheCleanupCard.Header" xml:space="preserve">
+    <value>Borrar caché</value>
+  </data>
 </root>

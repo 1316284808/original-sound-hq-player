@@ -1645,7 +1645,7 @@
     <value>免责声明</value>
   </data>
   <data name="ClearCoverCacheButton.Content" xml:space="preserve">
-    <value>清空缓存</value>
+    <value>清理封面缓存</value>
   </data>
   <data name="AreUSureClearCoverCache" xml:space="preserve">
     <value>确定清空封面缓存吗？</value>
@@ -2171,7 +2171,7 @@
     <value>只缓存播放的原始音频，达到限额后自动清理旧缓存。关闭开关停止补全，已有完整缓存仍可播放。</value>
   </data>
   <data name="WebDavClearCacheButton.Content" xml:space="preserve">
-    <value>清理缓存</value>
+    <value>清理播放缓存</value>
   </data>
   <data name="MusicSources.Text" xml:space="preserve"><value>音乐来源</value></data>
   <data name="WebDavPauseMenu.Text" xml:space="preserve"><value>暂停扫描</value></data>
@@ -2303,4 +2303,7 @@ SHA-256：{5}
   <data name="WindowBackgroundClear" xml:space="preserve"><value>清除图片</value></data>
   <data name="WindowBackgroundBlur" xml:space="preserve"><value>模糊程度</value></data>
   <data name="WindowBackgroundLoadError" xml:space="preserve"><value>无法加载背景图片，请重新选择可访问的 JPG、PNG、BMP 或 WebP 图片。</value></data>
+  <data name="CacheCleanupCard.Header" xml:space="preserve">
+    <value>清理缓存</value>
+  </data>
 </root>

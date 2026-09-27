@@ -1646,7 +1646,7 @@
     <value>Disclaimer</value>
   </data>
   <data name="ClearCoverCacheButton.Content" xml:space="preserve">
-    <value>Clear cache</value>
+    <value>Clear cover cache</value>
   </data>
   <data name="AreUSureClearCoverCache" xml:space="preserve">
     <value>Clear the cover cache?</value>
@@ -2172,7 +2172,7 @@
     <value>Caches original audio being played. Old entries are evicted at the limit. Turning this off stops filling; complete cached tracks remain playable.</value>
   </data>
   <data name="WebDavClearCacheButton.Content" xml:space="preserve">
-    <value>Clear cache</value>
+    <value>Clear playback cache</value>
   </data>
   <data name="MusicSources.Text" xml:space="preserve"><value>Music sources</value></data>
   <data name="WebDavPauseMenu.Text" xml:space="preserve"><value>Pause scan</value></data>
@@ -2304,4 +2304,7 @@ SHA-256: {5}
   <data name="WindowBackgroundClear" xml:space="preserve"><value>Clear image</value></data>
   <data name="WindowBackgroundBlur" xml:space="preserve"><value>Blur amount</value></data>
   <data name="WindowBackgroundLoadError" xml:space="preserve"><value>Cannot load the background image. Choose an accessible JPG, PNG, BMP, or WebP image.</value></data>
+  <data name="CacheCleanupCard.Header" xml:space="preserve">
+    <value>Clear cache</value>
+  </data>
 </root>

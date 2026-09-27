@@ -26,13 +26,13 @@ public partial class WebDavSourcesViewModel : ObservableObject
     private bool _loaded, _loading, _stopped;
     private Task _save = Task.CompletedTask;
     private Task _sizeRefresh = Task.CompletedTask;
+    private int _sizeRefreshVersion;
     private readonly System.Threading.SemaphoreSlim _loadGate = new(1, 1);
     public ObservableCollection<WebDavSourceItem> Sources { get; } = [];
     public ObservableCollection<MusicSourceChoice> Choices { get; } = [];
     public string Status { get; private set => SetProperty(ref field, value); } = "";
     public bool CacheEnabled { get; set { if (SetProperty(ref field, value) && !_loading) SaveCache(); } }
     public double CacheLimitGiB { get; set { if (SetProperty(ref field, value) && !_loading) SaveCache(); } } = 10;
-    public string CacheDirectory => WebDavCachePaths.Root(_app.MusicCoverCache);
     public string CacheSize { get; private set => SetProperty(ref field, value); } = "";
     public MusicSourceChoice? SelectedSource
     {
@@ -97,7 +97,7 @@ public partial class WebDavSourcesViewModel : ObservableObject
                 _loaded = true;
                 _app.State.Preferences.PropertyChanged += OnPreferencesChanged;
             }
-            await UpdateCacheSizeAsync();
+            await RefreshCacheSizeAsync();
         }
         catch { Status = ToolUtils.GetString("WebDavErrorConnectionFailed"); }
         finally { _loadGate.Release(); }
@@ -106,14 +106,32 @@ public partial class WebDavSourcesViewModel : ObservableObject
     private void OnPreferencesChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (_stopped || e.PropertyName != nameof(AppSettings.MusicCoverCache)) return;
-        OnPropertyChanged(nameof(CacheDirectory));
-        _sizeRefresh = RefreshSizeAfterAsync(_sizeRefresh);
+        _ = RefreshCacheSizeAsync();
     }
-    private async Task RefreshSizeAfterAsync(Task previous)
+    public Task RefreshCacheSizeAsync()
     {
+        if (_stopped) return Task.CompletedTask;
+        string root = _app.MusicCoverCache;
+        int version = ++_sizeRefreshVersion;
+        return _sizeRefresh = RefreshSizeAfterAsync(_sizeRefresh, root, version);
+    }
+    private async Task RefreshSizeAfterAsync(Task previous, string root, int version)
+    {
+        // 多入口共用一个扫描队列；换目录或连续修改时跳过旧请求，退出等待在途扫描。
         await previous;
-        try { await UpdateCacheSizeAsync(); }
-        catch { if (!_stopped) Status = ToolUtils.GetString("WebDavCacheUnavailable"); }
+        if (_stopped || version != _sizeRefreshVersion) return;
+        try
+        {
+            long size = await Task.Run(() => CacheSizeCalculator.GetSize(root));
+            if (!_stopped && version == _sizeRefreshVersion)
+                CacheSize = CacheSizeCalculator.FormatSize(size);
+        }
+        catch
+        {
+            if (_stopped || version != _sizeRefreshVersion) return;
+            CacheSize = "—";
+            Status = ToolUtils.GetString("WebDavCacheUnavailable");
+        }
     }
     private void OnStatus(WebDavScanStatus status)
     {
@@ -172,18 +190,13 @@ public partial class WebDavSourcesViewModel : ObservableObject
     private async Task SaveAfterAsync(Task previous, WebDavCacheSettings settings)
     {
         await previous;
-        try { await _library.ApplyCacheSettingsAsync(settings); await UpdateCacheSizeAsync(); }
+        try { await _library.ApplyCacheSettingsAsync(settings); await RefreshCacheSizeAsync(); }
         catch { Status = ToolUtils.GetString("WebDavCacheUnavailable"); }
-    }
-    private async Task UpdateCacheSizeAsync()
-    {
-        long size = await Task.Run(_cache.GetSize);
-        if (!_stopped) CacheSize = $"{size / (1024d * 1024 * 1024):F2} GiB";
     }
     [RelayCommand]
     private async Task ClearCacheAsync()
     {
-        try { await Task.Run(_cache.Clear); await UpdateCacheSizeAsync(); }
+        try { await Task.Run(_cache.Clear); await RefreshCacheSizeAsync(); }
         catch { Status = ToolUtils.GetString("WebDavCacheUnavailable"); }
     }
     public async Task StopAsync()

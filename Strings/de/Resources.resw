@@ -1643,7 +1643,7 @@
     <value>Haftungsausschluss</value>
   </data>
   <data name="ClearCoverCacheButton.Content" xml:space="preserve">
-    <value>Cache leeren</value>
+    <value>Cover-Cache leeren</value>
   </data>
   <data name="AreUSureClearCoverCache" xml:space="preserve">
     <value>Cover-Cache leeren?</value>
@@ -2172,7 +2172,7 @@
     <value>Speichert abgespielte Originaldateien. Alte Einträge werden bei Erreichen des Limits entfernt. Abschalten beendet das Nachladen; vollständige Dateien bleiben abspielbar.</value>
   </data>
   <data name="WebDavClearCacheButton.Content" xml:space="preserve">
-    <value>Cache leeren</value>
+    <value>Wiedergabecache leeren</value>
   </data>
   <data name="MusicSources.Text" xml:space="preserve"><value>Musikquellen</value></data>
   <data name="WebDavPauseMenu.Text" xml:space="preserve"><value>Scan pausieren</value></data>
@@ -2304,4 +2304,7 @@ SHA-256: {5}
   <data name="WindowBackgroundClear" xml:space="preserve"><value>Bild entfernen</value></data>
   <data name="WindowBackgroundBlur" xml:space="preserve"><value>Unschärfe</value></data>
   <data name="WindowBackgroundLoadError" xml:space="preserve"><value>Das Hintergrundbild kann nicht geladen werden. Wählen Sie ein zugängliches JPG-, PNG-, BMP- oder WebP-Bild.</value></data>
+  <data name="CacheCleanupCard.Header" xml:space="preserve">
+    <value>Cache leeren</value>
+  </data>
 </root>

@@ -1646,7 +1646,7 @@
     <value>Yasal uyarı</value>
   </data>
   <data name="ClearCoverCacheButton.Content" xml:space="preserve">
-    <value>Önbelleği temizle</value>
+    <value>Kapak önbelleğini temizle</value>
   </data>
   <data name="AreUSureClearCoverCache" xml:space="preserve">
     <value>Kapak önbelleği temizlensin mi?</value>
@@ -2172,7 +2172,7 @@
     <value>Çalınan özgün sesi önbelleğe alır. Sınıra ulaşıldığında eski girdiler çıkarılır. Bunu kapatmak doldurmayı durdurur; tamamen önbelleğe alınmış parçalar çalınmaya devam eder.</value>
   </data>
   <data name="WebDavClearCacheButton.Content" xml:space="preserve">
-    <value>Önbelleği temizle</value>
+    <value>Oynatma önbelleğini temizle</value>
   </data>
   <data name="MusicSources.Text" xml:space="preserve"><value>Müzik kaynakları</value></data>
   <data name="WebDavPauseMenu.Text" xml:space="preserve"><value>Taramayı duraklat</value></data>
@@ -2304,4 +2304,7 @@ SHA-256: {5}
   <data name="WindowBackgroundClear" xml:space="preserve"><value>Resmi temizle</value></data>
   <data name="WindowBackgroundBlur" xml:space="preserve"><value>Bulanıklık</value></data>
   <data name="WindowBackgroundLoadError" xml:space="preserve"><value>Arka plan resmi yüklenemiyor. Erişilebilir bir JPG, PNG, BMP veya WebP resmi seçin.</value></data>
+  <data name="CacheCleanupCard.Header" xml:space="preserve">
+    <value>Önbelleği temizle</value>
+  </data>
 </root>

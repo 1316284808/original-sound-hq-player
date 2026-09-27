@@ -1643,7 +1643,7 @@
     <value>免責事項</value>
   </data>
   <data name="ClearCoverCacheButton.Content" xml:space="preserve">
-    <value>キャッシュをクリア</value>
+    <value>カバーキャッシュを削除</value>
   </data>
   <data name="AreUSureClearCoverCache" xml:space="preserve">
     <value>カバーキャッシュをクリアしますか？</value>
@@ -2172,7 +2172,7 @@
     <value>再生する元音源を保存します。上限に達すると古いキャッシュを削除します。オフにすると補完を停止し、保存済みの曲は再生できます。</value>
   </data>
   <data name="WebDavClearCacheButton.Content" xml:space="preserve">
-    <value>キャッシュを削除</value>
+    <value>再生キャッシュを削除</value>
   </data>
   <data name="MusicSources.Text" xml:space="preserve"><value>音楽ソース</value></data>
   <data name="WebDavPauseMenu.Text" xml:space="preserve"><value>スキャンを停止</value></data>
@@ -2304,4 +2304,7 @@ SHA-256: {5}
   <data name="WindowBackgroundClear" xml:space="preserve"><value>画像を解除</value></data>
   <data name="WindowBackgroundBlur" xml:space="preserve"><value>ぼかしの強さ</value></data>
   <data name="WindowBackgroundLoadError" xml:space="preserve"><value>背景画像を読み込めません。アクセス可能な JPG、PNG、BMP または WebP 画像を選び直してください。</value></data>
+  <data name="CacheCleanupCard.Header" xml:space="preserve">
+    <value>キャッシュの削除</value>
+  </data>
 </root>
