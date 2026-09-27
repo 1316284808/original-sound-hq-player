@@ -23,7 +23,7 @@ while critical notifications retain order and fail the connection explicitly on 
 No IPC I/O runs in the audio render callback. Limits are 2 KiB for ordinary commands, 256 KiB for
 complete device corrections, and 128 KiB for streaming descriptors.
 
-Deploy the main app and `Player/AudioPlayer.exe` together: v2 transport does not support the old MMF protocol.
+Deploy the main app and `Player/AudioPlayer.exe` together: handshake v3 adds gapless transitions and rate-aware progress, and rejects older peers. The pipe names retain their v2 suffix.
 The bass-family dependencies have been removed; the table below is a historical behavior reference.
 
 ## Architecture

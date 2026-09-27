@@ -30,6 +30,12 @@ internal static unsafe partial class Program
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(WasapiOutput))]
     private static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--test-playback-effects")
+        {
+            FFmpeg.AutoGen.ffmpeg.RootPath = AppContext.BaseDirectory;
+            RunPlaybackEffectsTests();
+            return _failures == 0 ? 0 : 1;
+        }
         if (args.Length == 1 && args[0] is "--test-network-asio" or "--test-nas-dsf")
         {
             FFmpeg.AutoGen.ffmpeg.RootPath = AppContext.BaseDirectory;
@@ -106,6 +112,7 @@ internal static unsafe partial class Program
         RunAsioNotificationTests();
         RunEqualizerQTests();
         RunDspTests();
+        RunPlaybackEffectsTests();
         RunConvolutionTests();
         RunDeviceCorrectionTests();
         RunCurveTests();
@@ -276,7 +283,8 @@ internal static unsafe partial class Program
                 Set(output, "_failed", failed ? 1 : 0);
                 Set(engine, "_output", output);
                 Require(Reuse(engine, next) == expected, $"expected reuse={expected}");
-                Require(ReferenceEquals(output.GetType().GetField("_source", Private)!.GetValue(output), expected ? next : old),
+                var attachedSource = output.GetType().GetField("_source", Private)!.GetValue(output);
+                Require(ReferenceEquals(attachedSource is GaplessSource gapless ? gapless.Current : attachedSource, expected ? next : old),
                     "reuse decision replaced the wrong source");
 
                 // The output API must also reject incompatible sources if called without the engine gate.

@@ -238,3 +238,5 @@ await client.StopAsync(id, cancellationToken);
 - 网络会话不启动本地整曲响度扫描。构建版本与校验和见 `Libraries/FFmpeg/x64/BUILD.md`；Plugins 版 DLL 保留当前全部编解码与封装能力，并增加 `httpproxy`。
 
 验证：`dotnet run --project _tools/StreamingRegression -c Release -- <AudioPlayer.exe> --play`。播放器 EXE 旁需放置四个 FFmpeg DLL；测试使用独立 IPC 名称、本地 HTTP/Range/TLS 服务器，`--play` 会向实际默认设备播放低音量测试音。TLS 测试需要 Windows 临时私钥容器访问权限。
+
+无缝播放与倍速/压限设置见 [DSP.md](DSP.md)。当前握手版本为 v3，管道名称保留 `_v2` 后缀；主程序与播放端需同步部署。

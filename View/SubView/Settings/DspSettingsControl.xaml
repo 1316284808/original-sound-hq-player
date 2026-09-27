@@ -30,12 +30,48 @@
                     Margin="2,0,0,0"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     TextWrapping="Wrap" />
+                <controls:SettingsCard Header="{x:Bind tool:ToolUtils.GetString('GaplessPlayback')}"
+                    Description="{x:Bind tool:ToolUtils.GetString('GaplessPlaybackDescription')}">
+                    <ToggleSwitch MinWidth="0" IsOn="{x:Bind ViewModel.GaplessPlayback, Mode=TwoWay}"
+                        AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('GaplessPlayback')}" />
+                </controls:SettingsCard>
                 <controls:SettingsCard Description="{x:Bind tool:ToolUtils.GetString('DspMasterDescription')}" Header="{x:Bind tool:ToolUtils.GetString('DspMaster')}">
                     <ToggleSwitch
                         MinWidth="0"
                         IsEnabled="{x:Bind ViewModel.MasterAvailable, Mode=OneWay}"
                         IsOn="{x:Bind ViewModel.MasterEnabled, Mode=TwoWay}" />
                 </controls:SettingsCard>
+                <controls:SettingsCard Header="{x:Bind tool:ToolUtils.GetString('DspPlaybackRate')}"
+                    Description="{x:Bind tool:ToolUtils.GetString('DspPlaybackRateDescription')}"
+                    IsEnabled="{x:Bind ViewModel.PlaybackRateEditable, Mode=OneWay}">
+                    <NumberBox Width="220" Minimum="0.5" Maximum="2" SmallChange="0.05" LargeChange="0.25"
+                        SpinButtonPlacementMode="Inline" Value="{x:Bind ViewModel.PlaybackRate, Mode=TwoWay}"
+                        AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('DspPlaybackRate')}" />
+                </controls:SettingsCard>
+                <controls:SettingsCard Header="{x:Bind tool:ToolUtils.GetString('DspCompressor')}"
+                    Description="{x:Bind tool:ToolUtils.GetString('DspCompressorDescription')}"
+                    IsEnabled="{x:Bind ViewModel.EffectsActive, Mode=OneWay}">
+                    <ToggleSwitch MinWidth="0" IsOn="{x:Bind ViewModel.CompressorEnabled, Mode=TwoWay}"
+                        AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('DspCompressor')}" />
+                </controls:SettingsCard>
+                <StackPanel Spacing="{StaticResource SettingsCardSpacing}"
+                    Visibility="{x:Bind tool:BindUtils.BoolToVisibilityConverter(ViewModel.CompressorEnabled), Mode=OneWay}">
+                    <controls:SettingsCard Header="{x:Bind tool:ToolUtils.GetString('DspCompressorThreshold')}" IsEnabled="{x:Bind ViewModel.EffectsActive, Mode=OneWay}">
+                        <NumberBox Width="220" Minimum="-40" Maximum="-3" SmallChange="1"
+                            SpinButtonPlacementMode="Inline" Value="{x:Bind ViewModel.CompressorThresholdDb, Mode=TwoWay}"
+                            AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('DspCompressorThreshold')}" />
+                    </controls:SettingsCard>
+                    <controls:SettingsCard Header="{x:Bind tool:ToolUtils.GetString('DspCompressorRatio')}" IsEnabled="{x:Bind ViewModel.EffectsActive, Mode=OneWay}">
+                        <NumberBox Width="220" Minimum="1" Maximum="20" SmallChange="0.5"
+                            SpinButtonPlacementMode="Inline" Value="{x:Bind ViewModel.CompressorRatio, Mode=TwoWay}"
+                            AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('DspCompressorRatio')}" />
+                    </controls:SettingsCard>
+                    <controls:SettingsCard Header="{x:Bind tool:ToolUtils.GetString('DspCompressorMakeup')}" IsEnabled="{x:Bind ViewModel.EffectsActive, Mode=OneWay}">
+                        <NumberBox Width="220" Minimum="0" Maximum="18" SmallChange="0.5"
+                            SpinButtonPlacementMode="Inline" Value="{x:Bind ViewModel.CompressorMakeupDb, Mode=TwoWay}"
+                            AutomationProperties.Name="{x:Bind tool:ToolUtils.GetString('DspCompressorMakeup')}" />
+                    </controls:SettingsCard>
+                </StackPanel>
                 <controls:SettingsCard
                     Description="{x:Bind tool:ToolUtils.GetString('DspEqualizerDescription')}"
                     Header="{x:Bind tool:ToolUtils.GetString('DspEqualizer')}"

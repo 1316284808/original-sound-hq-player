@@ -36,7 +36,7 @@ static async Task RunAsync()
     var player = new BassPlayerCommandService();
     var lifecycle = new AppLifecycle();
     using var coordinator = new PlaybackCoordinator(state, player, statistics, new(lifecycle),
-        new(lifecycle, NullLogger<ShutdownCoordinator>.Instance), NullLogger<PlaybackCoordinator>.Instance, remote, library);
+        new(lifecycle, NullLogger<ShutdownCoordinator>.Instance), NullLogger<PlaybackCoordinator>.Instance, remote, library, new IpcService());
     int sourceNotifications = 0;
     network.PropertyChanged += (_, change) =>
     {

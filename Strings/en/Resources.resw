@@ -1760,7 +1760,7 @@
     <value>Enable DSP</value>
   </data>
   <data name="DspMasterDescription" xml:space="preserve">
-    <value>When off, bypass normalization, preamp attenuation, EQ and channel effects while keeping their settings.</value>
+    <value>Bypass speed, dynamics and other PCM effects while retaining preferences. Gapless playback is controlled separately.</value>
   </data>
   <data name="DspMasterBypass" xml:space="preserve">
     <value>DSP is off: all effects are bypassed and their settings are retained. Enable it in Settings → Audio effects.</value>
@@ -2269,5 +2269,32 @@ SHA-256: {5}
   </data>
   <data name="WebDavCachedAudio" xml:space="preserve">
     <value>WebDAV · Audio cached</value>
+  </data>
+  <data name="GaplessPlayback" xml:space="preserve">
+    <value>Gapless playback</value>
+  </data>
+  <data name="GaplessPlaybackDescription" xml:space="preserve">
+    <value>Preload compatible local PCM tracks for uninterrupted transitions without crossfade. Bitstreams, network sources and format changes use normal transitions.</value>
+  </data>
+  <data name="DspPlaybackRate" xml:space="preserve">
+    <value>Playback speed</value>
+  </data>
+  <data name="DspPlaybackRateDescription" xml:space="preserve">
+    <value>0.5–2× with pitch preserved. Changes rebuffer at the current position; 1× preserves original samples. Non-seekable network streams stay at 1×.</value>
+  </data>
+  <data name="DspCompressor" xml:space="preserve">
+    <value>Compressor / limiter</value>
+  </data>
+  <data name="DspCompressorDescription" xml:space="preserve">
+    <value>Reduce loud passages and lift quiet passages with makeup gain. Channels are linked; output sample peaks are limited to −1 dBFS.</value>
+  </data>
+  <data name="DspCompressorThreshold" xml:space="preserve">
+    <value>Threshold (dBFS)</value>
+  </data>
+  <data name="DspCompressorRatio" xml:space="preserve">
+    <value>Ratio (:1)</value>
+  </data>
+  <data name="DspCompressorMakeup" xml:space="preserve">
+    <value>Makeup gain (dB)</value>
   </data>
 </root>

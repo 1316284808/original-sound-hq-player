@@ -8,6 +8,12 @@ public sealed record DspSettings
 {
     /// <summary>获取或设置 DSP 总开关；默认开启以保留旧版音效偏好。</summary>
     public bool IsEnabled { get; init; } = true;
+    public bool GaplessPlayback { get; init; } = true;
+    public double PlaybackRate { get; init; } = 1;
+    public bool CompressorEnabled { get; init; }
+    public double CompressorThresholdDb { get; init; } = -18;
+    public double CompressorRatio { get; init; } = 4;
+    public double CompressorMakeupDb { get; init; } = 6;
     /// <summary>获取或设置是否按整曲响度应用固定增益。</summary>
     public bool NormalizeLoudness { get; init; }
     /// <summary>获取或设置目标综合响度，单位 LUFS。</summary>
@@ -57,9 +63,15 @@ public sealed record DspSettings
         double balance = Finite(Balance, -1, 1, 0);
         double crossfeed = Finite(Crossfeed, 0, 0.5, 0);
         double width = Finite(StereoWidth, 0, 1.5, 1);
+        double rate = Finite(PlaybackRate, 0.5, 2, 1);
+        double threshold = Finite(CompressorThresholdDb, -40, -3, -18);
+        double ratio = Finite(CompressorRatio, 1, 20, 4);
+        double makeup = Finite(CompressorMakeupDb, 0, 18, 6);
         if (TargetLufs == target && HeadroomDb == headroom && Balance == balance
+            && PlaybackRate == rate && CompressorThresholdDb == threshold && CompressorRatio == ratio && CompressorMakeupDb == makeup
             && Crossfeed == crossfeed && StereoWidth == width && ConvolutionTrimDb == trim && ImpulsePath == path && CurvePoints == curve && ConvolutionSource == source) return this;
         return this with { TargetLufs = target, HeadroomDb = headroom, Balance = balance,
+            PlaybackRate = rate, CompressorThresholdDb = threshold, CompressorRatio = ratio, CompressorMakeupDb = makeup,
             Crossfeed = crossfeed, StereoWidth = width, ConvolutionTrimDb = trim, ImpulsePath = path, CurvePoints = curve, ConvolutionSource = source };
     }
 
@@ -90,21 +102,27 @@ public readonly record struct DspState(byte RenderKind, bool EqualizerActive, in
     AtmosPlaybackStatus AtmosStatus = AtmosPlaybackStatus.Off, AtmosFailure AtmosReason = AtmosFailure.None,
     long AtmosFailureSequence = 0, AtmosFailure LastAtmosFailure = AtmosFailure.None,
     bool AtmosFailureStopped = false, ActualOutputMode ActualOutput = ActualOutputMode.None,
-    SurroundPlaybackStatus SurroundStatus = SurroundPlaybackStatus.Off, long SurroundFailureSequence = 0, bool SurroundFailureStopped = false);
+    SurroundPlaybackStatus SurroundStatus = SurroundPlaybackStatus.Off, long SurroundFailureSequence = 0, bool SurroundFailureStopped = false, bool CanChangePlaybackRate = true);
 
 /// <summary>提供版本化 DSP 协议；独立命令保持旧设置和 EQ 载荷兼容。</summary>
 public static class DspProtocol
 {
     /// <summary>设置载荷字节数。</summary>
-    public const int SettingsSize = 1596;
+    public const int SettingsSize = 1630;
     /// <summary>状态载荷字节数。</summary>
-    public const int StateSize = 319;
+    public const int StateSize = 320;
 
     /// <summary>写入 DSP 设置。</summary>
     public static void WriteSettings(Span<byte> data, DspSettings settings)
     {
         data[..SettingsSize].Clear();
-        data[0] = 5;
+        data[0] = 6;
+        data[1596] = settings.GaplessPlayback ? (byte)1 : (byte)0;
+        data[1597] = settings.CompressorEnabled ? (byte)1 : (byte)0;
+        BinaryPrimitives.WriteDoubleLittleEndian(data[1598..], settings.PlaybackRate);
+        BinaryPrimitives.WriteDoubleLittleEndian(data[1606..], settings.CompressorThresholdDb);
+        BinaryPrimitives.WriteDoubleLittleEndian(data[1614..], settings.CompressorRatio);
+        BinaryPrimitives.WriteDoubleLittleEndian(data[1622..], settings.CompressorMakeupDb);
         data[1595] = settings.AutoPreamp switch { true => 2, false => 1, null => 0 };
         data[1] = settings.NormalizeLoudness ? (byte)1 : (byte)0;
         data[2] = settings.SwapChannels ? (byte)1 : (byte)0;
@@ -136,7 +154,9 @@ public static class DspProtocol
         bool legacy = data.Length == 44 && data[0] == 1;
         bool v2 = data.Length == 45 && data[0] == 2;
         bool v3 = data.Length == 1080 && data[0] == 3;
-        bool v5 = data.Length == SettingsSize && data[0] == 5;
+        bool v6 = data.Length == SettingsSize && data[0] == 6;
+        if (v6 && (data[1596] > 1 || data[1597] > 1)) throw new ArgumentException("Invalid playback effects flags.");
+        bool v5 = (data.Length == 1596 && data[0] == 5) || v6;
         bool v4 = (data.Length == 1595 && data[0] == 4) || v5;
         if (v5 && data[1595] > 2) throw new ArgumentException("Invalid preamp mode.");
         bool convolution = v3 || v4;
@@ -158,6 +178,12 @@ public static class DspProtocol
         }
         return new DspSettings
         {
+            GaplessPlayback = !v6 || data[1596] != 0,
+            CompressorEnabled = v6 && data[1597] != 0,
+            PlaybackRate = v6 ? BinaryPrimitives.ReadDoubleLittleEndian(data[1598..]) : 1,
+            CompressorThresholdDb = v6 ? BinaryPrimitives.ReadDoubleLittleEndian(data[1606..]) : -18,
+            CompressorRatio = v6 ? BinaryPrimitives.ReadDoubleLittleEndian(data[1614..]) : 4,
+            CompressorMakeupDb = v6 ? BinaryPrimitives.ReadDoubleLittleEndian(data[1622..]) : 6,
             AutoPreamp = v5 ? data[1595] switch { 2 => true, 1 => false, _ => (bool?)null } : null,
             ConvolutionSource = v4 ? (ConvolutionSource)data[1080] : ConvolutionSource.Automatic,
             CurvePoints = curve,
@@ -181,7 +207,8 @@ public static class DspProtocol
         data[0] = state.RenderKind;
         data[1] = state.EqualizerActive ? (byte)1 : (byte)0;
         data[2] = (byte)state.Loudness;
-        data[3] = 8;
+        data[3] = 9;
+        data[319] = state.CanChangePlaybackRate ? (byte)1 : (byte)0;
         data[309] = (byte)state.SurroundStatus;
         BinaryPrimitives.WriteInt64LittleEndian(data[310..], state.SurroundFailureSequence);
         data[318] = state.SurroundFailureStopped ? (byte)1 : (byte)0;
@@ -209,7 +236,9 @@ public static class DspProtocol
         bool legacy = data.Length == 24 && data[3] == 1;
         bool v2 = data.Length == 25 && data[3] == 2;
         bool v3 = data.Length == 26 && data[3] == 3;
-        bool v8 = data.Length == StateSize && data[3] == 8;
+        bool v9 = data.Length == StateSize && data[3] == 9;
+        if (v9 && data[319] > 1) throw new ArgumentException("Invalid playback rate capability.");
+        bool v8 = (data.Length == 319 && data[3] == 8) || v9;
         if (v8 && (data[309] > (byte)SurroundPlaybackStatus.Stopped || data[318] > 1)) throw new ArgumentException("Invalid surround state.");
         bool v7 = (data.Length == 309 && data[3] == 7) || v8;
         if (v7 && (data[296] > (byte)AtmosPlaybackStatus.Stopped || data[297] > (byte)AtmosFailure.SelectDevice
@@ -235,6 +264,6 @@ public static class DspProtocol
             v7 && data[307] != 0,
             v7 ? (ActualOutputMode)data[308] : ActualOutputMode.None,
             v8 ? (SurroundPlaybackStatus)data[309] : SurroundPlaybackStatus.Off,
-            v8 ? BinaryPrimitives.ReadInt64LittleEndian(data[310..]) : 0, v8 && data[318] != 0);
+            v8 ? BinaryPrimitives.ReadInt64LittleEndian(data[310..]) : 0, v8 && data[318] != 0, !v9 || data[319] != 0);
     }
 }

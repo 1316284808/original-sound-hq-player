@@ -1757,7 +1757,7 @@
     <value>Activar DSP</value>
   </data>
   <data name="DspMasterDescription" xml:space="preserve">
-    <value>Al desactivar, omite normalización, atenuación previa, EQ y efectos de canal, conservando sus ajustes.</value>
+    <value>Omite la velocidad, la dinámica y otros efectos PCM conservando los ajustes. La reproducción sin pausas se controla por separado.</value>
   </data>
   <data name="DspMasterBypass" xml:space="preserve">
     <value>DSP desactivado: se omiten los efectos y se conservan sus ajustes. Actívalo en Ajustes → Efectos de audio.</value>
@@ -2269,5 +2269,32 @@ SHA-256: {5}
   </data>
   <data name="WebDavCachedAudio" xml:space="preserve">
     <value>WebDAV · Audio en caché</value>
+  </data>
+  <data name="GaplessPlayback" xml:space="preserve">
+    <value>Reproducción sin pausas</value>
+  </data>
+  <data name="GaplessPlaybackDescription" xml:space="preserve">
+    <value>Precarga pistas PCM locales compatibles para enlazarlas sin pausas ni fundido cruzado. Los flujos de bits, fuentes de red y cambios de formato usan transiciones normales.</value>
+  </data>
+  <data name="DspPlaybackRate" xml:space="preserve">
+    <value>Velocidad de reproducción</value>
+  </data>
+  <data name="DspPlaybackRateDescription" xml:space="preserve">
+    <value>0,5–2× conservando el tono. Los cambios recargan desde la posición actual; 1× conserva las muestras originales. Los flujos de red sin búsqueda permanecen a 1×.</value>
+  </data>
+  <data name="DspCompressor" xml:space="preserve">
+    <value>Compresor / limitador</value>
+  </data>
+  <data name="DspCompressorDescription" xml:space="preserve">
+    <value>Reduce los pasajes fuertes y eleva los suaves con ganancia de compensación. Canales enlazados; picos de muestra limitados a −1 dBFS.</value>
+  </data>
+  <data name="DspCompressorThreshold" xml:space="preserve">
+    <value>Umbral (dBFS)</value>
+  </data>
+  <data name="DspCompressorRatio" xml:space="preserve">
+    <value>Relación (:1)</value>
+  </data>
+  <data name="DspCompressorMakeup" xml:space="preserve">
+    <value>Ganancia de compensación (dB)</value>
   </data>
 </root>

@@ -9,6 +9,8 @@
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN;REAL_WINUI</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../External/BassPlayerIpc.Shared/BassPlayerIpc.Shared.csproj" />
+    <Compile Include="../../Services/PlaybackCoordinator.Gapless.cs" />
     <Compile Include="../../State/PlaybackState.cs;../../Services/WebDav/WebDavAvailability.cs" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />

@@ -123,6 +123,44 @@ Console.WriteLine($"[smoke] Play(confirmed) → {t}（已收到执行确认）")
 Thread.Sleep(400); // 观察首段输出与通知
 PumpNotifications();
 
+// Actual NativeAOT + persistent IPC + WASAPI integration for the new playback chain.
+if (args.Contains("--gapless"))
+{
+    try
+    {
+        Span<byte> dsp = stackalloc byte[DspProtocol.SettingsSize];
+        DspProtocol.WriteSettings(dsp, new DspSettings { PlaybackRate = 1.5, CompressorEnabled = true });
+        if (Send(CommandId.UpdateDsp, dsp, out _) != MessageTypeId.Success)
+            throw new InvalidOperationException("DSP settings rejected");
+        if (!SpinWait.SpinUntil(() => states.TryGetProgress(out var p) && p.PlaybackRate == 1.5 && p.Playing, 5000))
+            throw new InvalidOperationException("Speed change did not reach output telemetry");
+        states.TryGetProgress(out var initial);
+        long outputGeneration = states.CurrentDspState!.State.OutputGeneration;
+        var queue = new GaplessRequest(initial.Epoch, 77, mediaPath);
+        if (Send(CommandId.QueueNext, queue.Write(), out _) != MessageTypeId.Success)
+            throw new InvalidOperationException("Gapless queue rejected");
+        if (!SpinWait.SpinUntil(() => states.TryGetProgress(out var p) && p.GaplessToken == 77, 10000))
+            throw new InvalidOperationException("Gapless transition missing");
+        states.TryGetProgress(out var transitioned);
+        if (playbackEnds != 0 || !transitioned.Playing || transitioned.Epoch == initial.Epoch
+            || transitioned.PlaybackRate != 1.5 || states.CurrentDspState!.State.OutputGeneration != outputGeneration)
+            throw new InvalidOperationException("Transition stopped or rebuilt the output");
+        Console.WriteLine("[smoke] PASS: gapless at 1.5x + compressor, unchanged native output, no PlayEnded at boundary");
+        var pause = Send(CommandId.PlayButton, ReadOnlySpan<byte>.Empty, out var paused);
+        if (pause != MessageTypeId.PlayState || BinarySerializer.ReadPlayStateResponse(paused).IsPlaying)
+            throw new InvalidOperationException("Pause after transition failed");
+        var resume = Send(CommandId.PlayButton, ReadOnlySpan<byte>.Empty, out var resumed);
+        if (resume != MessageTypeId.PlayState || !BinarySerializer.ReadPlayStateResponse(resumed).IsPlaying)
+            throw new InvalidOperationException("Resume after transition failed");
+        if (!SpinWait.SpinUntil(() => playbackEnds > 0, 10000) || playbackEnds != 1)
+            throw new InvalidOperationException("Final output did not drain exactly once");
+        Console.WriteLine("[smoke] PASS: pause/resume after adoption and exactly one final end notification");
+        Send(CommandId.MusicEnd, ReadOnlySpan<byte>.Empty, out _);
+        return 0;
+    }
+    finally { StopPlayer(); }
+}
+
 // Natural end regression: real output + IPC, optionally seek near EOF to shorten a long fixture.
 // --expect-end --fade --seek-near-end --next=<file> (omit --seek-near-end for a full playthrough).
 if (args.Contains("--expect-end"))

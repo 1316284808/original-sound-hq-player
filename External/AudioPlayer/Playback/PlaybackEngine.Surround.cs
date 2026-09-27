@@ -30,7 +30,7 @@ public sealed partial class PlaybackEngine
             OutputMode == "DirectSound" ? null : WasapiEndpointId);
         if (string.IsNullOrEmpty(_surroundEndpoint)) return null;
         var output = new WasapiOutput(true, OutputMode == "WasapiExclusivePush");
-        if (output.Start(-1, Latency, session, 1, _surroundEndpoint, id => PrepareOutputDsp(session, id))) return output;
+        if (output.Start(-1, Latency, OutputSource(session), 1, _surroundEndpoint, id => PrepareOutputDsp(session, id))) return output;
         output.Dispose();
         return null;
     }

@@ -296,6 +296,8 @@ internal static class Regression
               remotePause.Remote.Played.SequenceEqual([remoteCurrent]),
             "playback toggle pauses remote current track without starting the pending remote track");
 
+        await GaplessAsync();
+
         using var responsive = new Scenario();
         responsive.State.CurrentPlayingList = [current, offline, nextLocal];
         responsive.State.CurrentPlayingMusic = current;
@@ -337,6 +339,68 @@ internal static class Regression
             await Task.Delay(5);
         }
     }
+    private static async Task GaplessAsync()
+    {
+        using var test = new Scenario();
+        var first = new Music(101);
+        var second = new Music(102);
+        var third = new Music(103);
+        test.State.CurrentPlayingList = [first, second, third];
+        test.Ipc.Progress = new(1, 10, 0, 3000, 0, true);
+        await test.Coordinator.PlayAtAsync(0);
+        test.State.IsPlaying = true;
+        var queued = test.Ipc.Queued.Last();
+        Check(queued.Path == second.Path && queued.Token > 0, "gapless preloads the actual next queue entry");
+        int presentations = 0;
+        test.Coordinator.TrackStarted += (_, _) =>
+        {
+            Check(App.MainWindow.DispatcherQueue.HasThreadAccess, "gapless presentation runs on UI dispatcher");
+            presentations++;
+        };
+        // Telemetry may reach the UI before the transition notification on the other pipe.
+        test.Ipc.Progress = new(2, 11, 20, 3000, 0, true, 0, 1, queued.Token);
+        await Task.Delay(600);
+        Check(test.State.CurrentPlayingMusic == second && test.Player.Played.Count == 1 && presentations == 1,
+            "telemetry-first transition adopts presentation without replaying the track");
+        await Task.Run(() => test.Ipc.Transition(queued.Token, 11));
+        await Task.Delay(20);
+        Check(presentations == 1, "late duplicate transition does not reload presentation");
+        var thirdPlan = test.Ipc.Queued.Last();
+        Check(thirdPlan.Path == third.Path && thirdPlan.Token != queued.Token, "adoption prepares the following entry");
+        test.State.CurrentPlayingList.Remove(third);
+        Check(test.Ipc.Queued.Any(request => request.Path.Length == 0), "queue removal cancels old preload");
+        await Task.Run(() => test.Ipc.Transition(thirdPlan.Token, 12));
+        await Task.Delay(20);
+        Check(test.State.CurrentPlayingMusic == second, "removed queue entry cannot steal selection");
+        test.State.CurrentPlayMode = WinUIMusicPlayer.Utils.ToolUtils.PlayMode.SingleLoop;
+        Check(test.Ipc.Queued.Last().Path == second.Path, "single loop preloads the current track");
+        test.State.CurrentPlayMode = WinUIMusicPlayer.Utils.ToolUtils.PlayMode.RepeatOff;
+        Check(test.Ipc.Queued.Last().Path.Length == 0, "repeat off clears preload");
+        test.State.CurrentPlayMode = WinUIMusicPlayer.Utils.ToolUtils.PlayMode.ListLoop;
+        var stale = test.Ipc.Queued.Last();
+        await test.Coordinator.PlayAtAsync(0);
+        await Task.Run(() => test.Ipc.Transition(stale.Token, 13));
+        await Task.Delay(20);
+        Check(test.State.CurrentPlayingMusic == first, "explicit selection wins over a late transition");
+        test.State.IsPlaying = false;
+        Check(test.Ipc.Queued.Last().Path.Length == 0, "pause cancels pending preload");
+        int before = test.Ipc.Queued.Count;
+        await Task.Delay(550);
+        Check(test.Ipc.Queued.Count == before, "paused playback stops queue refresh work");
+        using var race = new Scenario();
+        race.State.CurrentPlayingList = [first, second];
+        race.Ipc.Progress = new(1, 20, 0, 3000, 0, true);
+        await race.Coordinator.PlayAtAsync(0);
+        race.State.IsPlaying = true;
+        var committed = race.Ipc.Queued.Last();
+        race.Ipc.Progress = new(2, 21, 10, 3000, 0, true, 0, 1, committed.Token);
+        race.State.CurrentPlayingList.Remove(second);
+        await Task.Delay(20);
+        Check(race.State.CurrentPlayingMusic == second && race.Player.Played.Count == 1,
+            "cancellation acknowledgement reconciles a transition already committed by the audio thread");
+
+    }
+
     static void Check(bool value, string message) { if (!value) throw new Exception(message); Console.WriteLine("PASS: " + message); }
 }
 sealed class Scenario : IDisposable
@@ -346,13 +410,14 @@ sealed class Scenario : IDisposable
     public RemotePlaybackService Remote { get; } = new();
     public WebDavLibraryService Library { get; } = new();
     public AppLifecycle Lifecycle { get; } = new();
+    public IpcService Ipc { get; } = new();
     public PlaybackCoordinator Coordinator { get; }
     public Scenario()
     {
         Player.State = State;
         State.State.Queue.FindIndex = music => State.CurrentPlayingList.IndexOf(music);
         Coordinator = new(State, Player, new(), new ApplicationTasks(Lifecycle),
-            new ShutdownCoordinator(Lifecycle, NullLogger<ShutdownCoordinator>.Instance), NullLogger<PlaybackCoordinator>.Instance, Remote, Library);
+            new ShutdownCoordinator(Lifecycle, NullLogger<ShutdownCoordinator>.Instance), NullLogger<PlaybackCoordinator>.Instance, Remote, Library, Ipc);
     }
     public void Dispose() => Coordinator.Dispose();
 }

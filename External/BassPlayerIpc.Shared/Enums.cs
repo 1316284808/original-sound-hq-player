@@ -32,6 +32,7 @@ public enum CommandId : short
     UpdateDeviceCorrections = 21,
     PreviewDsp = 22,
     StreamControl = 23,
+    QueueNext = 24,
 }
 
 public enum MessageTypeId : short
@@ -51,6 +52,7 @@ public enum MessageTypeId : short
     TimeProgress = 12,
     EqState = 13,
     DspState = 14,
+    GaplessTransition = 15,
 }
 
 public enum ErrorCode : short

@@ -23,6 +23,21 @@ internal sealed class ConvolutionFilter
     internal sealed record Coefficients(double[][] Taps, double[][][] Kernels, int Length, int Partitions);
     internal Coefficients Prepared { get; }
 
+    internal bool HasSameCoefficients(ConvolutionFilter other)
+    {
+        if (ReferenceEquals(Prepared, other.Prepared)) return true;
+        // File IRs are deliberately not cached. Compare the bounded, immutable coefficients
+        // once at a track boundary so unchanged files can transfer their render history too.
+        if (_channels != other._channels || _length != other._length || _partitions != other._partitions) return false;
+        for (int ch = 0; ch < _channels; ch++)
+        {
+            if (!_taps[ch].AsSpan().SequenceEqual(other._taps[ch])) return false;
+            for (int part = 0; part < _partitions; part++)
+                if (!_kernels[ch][part].AsSpan().SequenceEqual(other._kernels[ch][part])) return false;
+        }
+        return true;
+    }
+
     internal ConvolutionFilter(ImpulseResponse impulse, int rate, int channels, bool useSimd = true)
         : this(Prepare(impulse, rate, channels), useSimd) { }
 

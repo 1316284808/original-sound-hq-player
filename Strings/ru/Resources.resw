@@ -1757,7 +1757,7 @@
     <value>Включить DSP</value>
   </data>
   <data name="DspMasterDescription" xml:space="preserve">
-    <value>При выключении обходит нормализацию, предварительное ослабление, EQ и эффекты каналов, сохраняя настройки.</value>
+    <value>Отключает изменение скорости, динамику и другие эффекты PCM, сохраняя настройки. Воспроизведение без пауз управляется отдельно.</value>
   </data>
   <data name="DspMasterBypass" xml:space="preserve">
     <value>DSP выключен: эффекты обойдены, настройки сохранены. Включите его в «Настройки → Звуковые эффекты».</value>
@@ -2269,5 +2269,32 @@ SHA-256: {5}
   </data>
   <data name="WebDavCachedAudio" xml:space="preserve">
     <value>WebDAV · Аудио кэшировано</value>
+  </data>
+  <data name="GaplessPlayback" xml:space="preserve">
+    <value>Воспроизведение без пауз</value>
+  </data>
+  <data name="GaplessPlaybackDescription" xml:space="preserve">
+    <value>Предзагрузка совместимых локальных PCM-треков без пауз и перекрёстного затухания. Для битовых потоков, сетевых источников и смены формата — обычные переходы.</value>
+  </data>
+  <data name="DspPlaybackRate" xml:space="preserve">
+    <value>Скорость воспроизведения</value>
+  </data>
+  <data name="DspPlaybackRateDescription" xml:space="preserve">
+    <value>0,5–2× с сохранением высоты тона. Изменения требуют буферизации с текущей позиции; 1× сохраняет исходные отсчёты. Сетевые потоки без перемотки воспроизводятся на скорости 1×.</value>
+  </data>
+  <data name="DspCompressor" xml:space="preserve">
+    <value>Компрессор / лимитер</value>
+  </data>
+  <data name="DspCompressorDescription" xml:space="preserve">
+    <value>Приглушает громкие фрагменты и усиливает тихие компенсирующим усилением. Каналы связаны; пики отсчётов ограничены −1 dBFS.</value>
+  </data>
+  <data name="DspCompressorThreshold" xml:space="preserve">
+    <value>Порог (dBFS)</value>
+  </data>
+  <data name="DspCompressorRatio" xml:space="preserve">
+    <value>Степень сжатия (:1)</value>
+  </data>
+  <data name="DspCompressorMakeup" xml:space="preserve">
+    <value>Компенсирующее усиление (дБ)</value>
   </data>
 </root>

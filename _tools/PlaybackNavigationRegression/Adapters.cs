@@ -17,6 +17,7 @@ namespace WinUIMusicPlayer
         private SynchronizationContext _context = null!;
         private int _thread;
         public void Attach() { _context = SynchronizationContext.Current!; _thread = Environment.CurrentManagedThreadId; }
+        public Microsoft.UI.Dispatching.DispatcherQueueTimer CreateTimer() => new(this);
         public bool HasThreadAccess => Environment.CurrentManagedThreadId == _thread;
         public void Post(Action action) => _context.Post(_ => action(), null);
         public bool TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueueHandler action) { Post(() => action()); return true; }
@@ -24,7 +25,18 @@ namespace WinUIMusicPlayer
 #endif
 }
 #if !REAL_WINUI
-namespace Microsoft.UI.Dispatching { public delegate void DispatcherQueueHandler(); }
+namespace Microsoft.UI.Dispatching
+{
+    public delegate void DispatcherQueueHandler();
+    public sealed class DispatcherQueueTimer(WinUIMusicPlayer.UiQueue queue)
+    {
+        private System.Threading.Timer? _timer;
+        public TimeSpan Interval { get; set; }
+        public event Action<DispatcherQueueTimer, object>? Tick;
+        public void Start() => _timer ??= new System.Threading.Timer(_ => queue.Post(() => { if (_timer != null) Tick?.Invoke(this, new()); }), null, Interval, Interval);
+        public void Stop() { _timer?.Dispose(); _timer = null; }
+    }
+}
 #endif
 namespace CommunityToolkit.WinUI
 {
@@ -46,7 +58,7 @@ namespace WinUIMusicPlayer.Model
 {
     public sealed class Music(int id, int source = 0) : CommunityToolkit.Mvvm.ComponentModel.ObservableObject
     {
-        public string Path => $"webdav://{source}/dav/tone.flac";
+        public string Path => source == 0 ? System.IO.Path.GetFullPath($"track-{id}.wav") : $"webdav://{source}/dav/tone.flac";
         public TimeSpan Duration { get; set; }
         public int Id => id;
         public int SourceId => source;
@@ -70,9 +82,14 @@ namespace WinUIMusicPlayer.Model
         public string BaseUri => "http://127.0.0.1/dav/";
     }
     public sealed class WebDavCacheSettings { public bool Enabled { get; set; } public int LimitGiB { get; set; } = 10; }
-    public static class AppSettings { public static string MusicCoverCache { get; set; } = Path.GetTempPath(); }
+    public static class AppSettings
+    {
+        public static string MusicCoverCache { get; set; } = Path.GetTempPath();
+        public static event EventHandler? AudioResponseChanged;
+        public static BassPlayerIpc.Shared.DspSettings Dsp { get; set { field = value; AudioResponseChanged?.Invoke(null, EventArgs.Empty); } } = new();
+    }
 }
-namespace WinUIMusicPlayer.Utils { public static class ToolUtils { public static string GetString(string key) => key; } }
+namespace WinUIMusicPlayer.Utils { public static class ToolUtils { public enum PlayMode { SingleLoop, ListLoop, RandomLoop, RepeatOff } public static string GetString(string key) => key; } }
 namespace WinUIMusicPlayer.Helper
 {
     public static class DialogHelper { public static Task<bool> ShowConfirmAsync(object root, string titleKey) => Task.FromResult(true); }
@@ -91,7 +108,8 @@ namespace WinUIMusicPlayer.ViewModel
         public bool CanPublishState => CanStartPlayback;
         public bool IsPlaybackEngineReady => true;
         public bool CanStartPlayback { get; set; } = true;
-        public List<Music> CurrentPlayingList { get; set; } = [];
+        public System.Collections.ObjectModel.ObservableCollection<Music> CurrentPlayingList { get; set; } = [];
+        public WinUIMusicPlayer.Utils.ToolUtils.PlayMode CurrentPlayMode { get; set => SetProperty(ref field, value); } = WinUIMusicPlayer.Utils.ToolUtils.PlayMode.ListLoop;
         public Music? CurrentPlayingMusic { get; set => SetProperty(ref field, value); }
         public Music? SelectedPlaybackMusic => State.Playback.PendingSelection?.Music ?? CurrentPlayingMusic;
         public int GetSelectedPlaybackIndex() => State.Playback.PendingSelection is { } pending ? (int)pending.EntryId - 1 : GetCurrentIndex();
@@ -102,7 +120,7 @@ namespace WinUIMusicPlayer.ViewModel
         public string RemotePlaybackStatus { get; set; } = "";
         public List<string> UILyrics { get; set; } = [];
         public AppState State { get; } = new();
-        public List<Music> SongsSource => CurrentPlayingList;
+        public System.Collections.ObjectModel.ObservableCollection<Music> SongsSource => CurrentPlayingList;
         public string MusicCoverCache => WinUIMusicPlayer.Model.AppSettings.MusicCoverCache;
         public void RefreshDataSource() { }
         public void StartProgressTimer() { }
@@ -172,6 +190,28 @@ namespace WinUIMusicPlayer.Services
         public void PlayNextTrack() { }
         public Task PlayButton() => Task.CompletedTask;
         public void ChangeWaveChannelTime(long ms) { }
+    }
+    public sealed class IpcService
+    {
+        public BassPlayerIpc.Shared.ProgressSnapshot? Progress;
+        public List<BassPlayerIpc.Shared.GaplessRequest> Queued { get; } = [];
+        public event Action<BassPlayerIpc.Shared.MessageTypeId, ReadOnlyMemory<byte>>? NotificationReceived;
+        public bool TryGetProgressSnapshot(out BassPlayerIpc.Shared.ProgressSnapshot snapshot) { snapshot = Progress ?? default; return Progress.HasValue; }
+        public void QueueNext(BassPlayerIpc.Shared.GaplessRequest request) => Queued.Add(request);
+        public async Task<long> CancelQueuedNextAsync()
+        {
+            Queued.Add(new(0, 0, ""));
+            long token = Progress?.GaplessToken ?? 0;
+            await Task.Yield();
+            return token;
+        }
+        public void Transition(long token, long epoch)
+        {
+            byte[] bytes = new byte[16];
+            System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(bytes, token);
+            System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(bytes.AsSpan(8), epoch);
+            NotificationReceived?.Invoke(BassPlayerIpc.Shared.MessageTypeId.GaplessTransition, bytes);
+        }
     }
     public sealed class PlaybackStatsService { public void FlushSession() { } public void StartSession(Music music) { } }
     #if !REAL_REMOTE

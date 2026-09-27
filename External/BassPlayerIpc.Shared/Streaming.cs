@@ -85,6 +85,7 @@ public sealed record StreamReply
     public bool CanSeek { get; init; }
     public long PositionMs { get; init; }
     public long? DurationMs { get; init; }
+    public double PlaybackRate { get; init; } = 1;
     public long BufferedMs { get; init; }
     public long SeekId { get; init; }
 }

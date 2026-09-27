@@ -38,7 +38,7 @@ public sealed class PlaybackTimeline
                 // Bounded extrapolation: stale/busy/stopped engine must not let lyrics run indefinitely.
                 double elapsed = _snapshot.Playing && !_paused
                     ? Math.Clamp((timestamp - _snapshot.Timestamp) * 1000.0 / Stopwatch.Frequency, 0, 100) : 0;
-                _displayMs = Math.Max(_displayMs, _snapshot.CurrentMs + (long)elapsed);
+                _displayMs = Math.Max(_displayMs, _snapshot.CurrentMs + (long)(elapsed * _snapshot.PlaybackRate));
                 if (_snapshot.TotalMs > 0) _displayMs = Math.Min(_displayMs, _snapshot.TotalMs);
             }
             return (_displayMs, _snapshot.TotalMs);

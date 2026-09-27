@@ -150,6 +150,7 @@ public class PlayerIpcService : IDisposable
         WriteEmptyResponse(MessageTypeId.Success);
         try
         {
+            _engine!.SynchronizeGapless();
             switch (commandId)
             {
                 case CommandId.Play:
@@ -204,6 +205,16 @@ public class PlayerIpcService : IDisposable
                     var req = BinarySerializer.ReadUpdateEqRequest(payload);
                     var resp = _engine!.SetEqualizerState(req);
                     WriteEqStateResponsePayload(resp);
+                    break;
+                }
+                case CommandId.QueueNext:
+                {
+                    _engine!.QueueNext(GaplessRequest.Read(payload));
+                    var identity = _engine.GetGaplessIdentity();
+                    Span<byte> reply = stackalloc byte[16];
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(reply, identity.Token);
+                    System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(reply[8..], identity.Epoch);
+                    SetResponse(MessageTypeId.Success, reply);
                     break;
                 }
                 case CommandId.UpdateDsp:
@@ -342,6 +353,14 @@ public class PlayerIpcService : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void GaplessTransition(long token, long epoch)
+    {
+        Span<byte> payload = stackalloc byte[16];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(payload, token);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(payload[8..], epoch);
+        SendNotification(MessageTypeId.GaplessTransition, payload);
+    }
+
     public void PlayBackEnded()
     {
         SendNotification(MessageTypeId.PlayEnded, ReadOnlySpan<byte>.Empty);

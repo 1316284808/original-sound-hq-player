@@ -2,6 +2,15 @@
 
 新条目加在最上方。
 
+## 2026-09-27 无缝播放、保调倍速与动态压限
+
+- `External/AudioPlayer/Playback`：预载下一首兼容本地 PCM，在同一输出回调内无停顿衔接；取消、暂停、seek、格式回退与退出保留明确的会话所有权。
+- `Services/PlaybackCoordinator.Gapless.cs`、IPC：按真实队列及循环模式预载，带身份的切歌通知/进度同步曲目、歌词和统计；取消确认处理已经开始的切歌，手动选曲优先。
+- `TempoProcessor.cs`、`DynamicsProcessor.cs`：加入 0.5–2× 保调倍速、声道联动软拐点压缩、补偿增益及 −1 dBFS 采样峰值限幅；进度与网络遥测按原曲时间计量。
+- `DspSettingsViewModel`、`DspSettingsControl.xaml`、`Strings/*`：新增设置并保存偏好，补齐七种语言的独立资源键；旧配置默认 1×、压限关闭、无缝开启。不能 seek 的网络流与位流不启用倍速。
+- `Player/AudioPlayer.exe`、共享协议：NativeAOT 产物同步更新；管道握手 v3，主程序与播放端须一同部署，DSP 设置兼容旧版本。
+- 验证：313 项播放回归通过，另通过偏好持久化、远程恢复、真实 WinUI 调度及 NativeAOT + WASAPI 共享输出测试；九个新增取词键覆盖七种语言。尚未实测 ASIO/独占硬件及设置页视觉布局。
+
 ## 2026-09-27 AudioPlayer IPC 统一为持久 Named Pipe
 
 - `External/BassPlayerIpc.Shared`：移除命令、进度、DSP 和设备校正的 MMF/信号量实现；统一版本化分帧、实例握手、有序确认、有界队列与取消/迟到响应的缓冲所有权。
