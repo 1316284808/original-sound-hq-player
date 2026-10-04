@@ -20,6 +20,7 @@ public sealed partial class WebDavSourcesControl : UserControl
         Loaded += async (_, _) => await ViewModel.LoadAsync();
     }
     public System.Threading.Tasks.Task ShowAddAsync() => EditAsync(null);
+    private void Add_Click(object sender, RoutedEventArgs e) => _ = EditAsync(null);
     private async void Edit_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is WebDavSourceItem item) await EditAsync(item.Source);

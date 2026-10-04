@@ -138,28 +138,10 @@
                 <controls:SettingsCard>
                     <controls:SettingsCard.Header>
                         <TextBlock
-                            x:Uid="SettingsPageToggleDesktopLyricsLockShortcut"
-                            TextWrapping="Wrap" />
-                    </controls:SettingsCard.Header>
-                    <customControl:ShortcutTextBox Shortcut="{x:Bind ViewModel.AppViewModel.ToggleDesktopLyricsLockShortcut, Mode=TwoWay}" />
-                </controls:SettingsCard>
-
-                <controls:SettingsCard>
-                    <controls:SettingsCard.Header>
-                        <TextBlock
                             x:Uid="SettingsPageToggleDesktopLyricsKaraokeShortcut"
                             TextWrapping="Wrap" />
                     </controls:SettingsCard.Header>
                     <customControl:ShortcutTextBox Shortcut="{x:Bind ViewModel.AppViewModel.ToggleDesktopLyricsKaraokeShortcut, Mode=TwoWay}" />
-                </controls:SettingsCard>
-
-                <controls:SettingsCard>
-                    <controls:SettingsCard.Header>
-                        <TextBlock
-                            x:Uid="SettingsPageResetDesktopLyricsShortcut"
-                            TextWrapping="Wrap" />
-                    </controls:SettingsCard.Header>
-                    <customControl:ShortcutTextBox Shortcut="{x:Bind ViewModel.AppViewModel.ResetDesktopLyricsShortcut, Mode=TwoWay}" />
                 </controls:SettingsCard>
             </StackPanel>
         </Grid>

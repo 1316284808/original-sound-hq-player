@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using BassPlayerIpc.Shared;
 using WinUIMusicPlayer.Helper;
 using WinUIMusicPlayer.Model;
@@ -74,9 +74,7 @@ public sealed class SettingsSnapshotFactory(AppState state)
         newSettings.ShowWindowShortcut = new(state.HotKeys.ShowWindowShortcut);
         newSettings.ToggleFullScreenShortcut = new(state.HotKeys.ToggleFullScreenShortcut);
         newSettings.ToggleDesktopLyricsShortcut = new(state.HotKeys.ToggleDesktopLyricsShortcut);
-        newSettings.ToggleDesktopLyricsLockShortcut = new(state.HotKeys.ToggleDesktopLyricsLockShortcut);
         newSettings.ToggleDesktopLyricsKaraokeShortcut = new(state.HotKeys.ToggleDesktopLyricsKaraokeShortcut);
-        newSettings.ResetDesktopLyricsShortcut = new(state.HotKeys.ResetDesktopLyricsShortcut);
         newSettings.EnableGlobalHotKey = state.Preferences.EnableGlobalHotKey;
         newSettings.IsTrimOnHideEnabled = state.Preferences.IsTrimOnHideEnabled;
         newSettings.IsTrimAfterPlaybackEnabled = state.Preferences.IsTrimAfterPlaybackEnabled;
@@ -85,7 +83,6 @@ public sealed class SettingsSnapshotFactory(AppState state)
         newSettings.UsePlayingDetailAlignmentInPortrait = state.Preferences.UsePlayingDetailAlignmentInPortrait;
         newSettings.AutoHideDesktopLyricsOnPlayingDetail = AppSettings.AutoHideDesktopLyricsOnPlayingDetail;
         newSettings.IsDesktopLyricsEnabled = AppSettings.IsDesktopLyricsEnabled;
-        newSettings.IsDesktopLyricsLocked = AppSettings.IsDesktopLyricsLocked;
         newSettings.IsDesktopLyricsKaraokeEnabled = AppSettings.IsDesktopLyricsKaraokeEnabled;
         newSettings.DesktopLyricsFontSize = AppSettings.DesktopLyricsFontSize;
         newSettings.DesktopLyricsFontFamily = AppSettings.DesktopLyricsFontFamily;

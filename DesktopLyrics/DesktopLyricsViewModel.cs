@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using Windows.UI;
@@ -35,13 +35,8 @@ namespace WinUIMusicPlayer.DesktopLyrics
             {
                 case nameof(IsEnabled):
                     AppSettings.IsDesktopLyricsEnabled = IsEnabled;
-                    EnsureBoundsLoaded();
                     if (IsEnabled) UpdateWindowVisibility();
                     else DesktopLyricsManager.CloseWindow();
-                    PersistSettings();
-                    break;
-                case nameof(IsLocked):
-                    AppSettings.IsDesktopLyricsLocked = IsLocked;
                     PersistSettings();
                     break;
                 case nameof(AutoHideOnPlayingDetail):
@@ -57,7 +52,6 @@ namespace WinUIMusicPlayer.DesktopLyrics
         }
 
         public bool IsEnabled { get => State.DesktopLyrics.IsEnabled; set => State.DesktopLyrics.IsEnabled = value; }
-        public bool IsLocked { get => State.DesktopLyrics.IsLocked; set => State.DesktopLyrics.IsLocked = value; }
         public bool IsKaraokeEnabled { get => State.DesktopLyrics.IsKaraokeEnabled; set => State.DesktopLyrics.IsKaraokeEnabled = value; }
         public bool AutoHideOnPlayingDetail { get => State.DesktopLyrics.AutoHideOnPlayingDetail; set => State.DesktopLyrics.AutoHideOnPlayingDetail = value; }
         public bool IsMainWindowShown { get => State.DesktopLyrics.IsMainWindowShown; set => State.DesktopLyrics.IsMainWindowShown = value; }
@@ -70,26 +64,19 @@ namespace WinUIMusicPlayer.DesktopLyrics
         }
 
         private DesktopLyricsStyle _style;
-        private SaveDesktopLyricsState _boundsState = new();
-        private bool _boundsLoaded;
 
         /// <summary>样式快照（悬浮窗监听变化推送渲染器；RestoreFromSettings / 设置页提交时整体更新）。</summary>
         public DesktopLyricsStyle Style { get => _style; set => SetProperty(ref _style, value); }
-
-        /// <summary>窗口边界状态（可变模型：窗口拖动/缩放时就地更新字段，落盘经 <see cref="PersistBounds"/>）。</summary>
-        public SaveDesktopLyricsState BoundsState => _boundsState;
 
         /// <summary>启动恢复（AppInitializerService 在初始化完成后调用）：
         /// 边界/样式/开关/锁定取自持久层与 AppSettings，启用则建窗。直接置字段避免 setter 副作用重复落盘。</summary>
         public void RestoreFromSettings()
         {
-            EnsureBoundsLoaded();
             Style = BuildStyleFromSettings();
             _restoring = true;
             try
             {
                 IsEnabled = AppSettings.IsDesktopLyricsEnabled;
-                IsLocked = AppSettings.IsDesktopLyricsLocked;
                 IsKaraokeEnabled = AppSettings.IsDesktopLyricsKaraokeEnabled;
                 AutoHideOnPlayingDetail = AppSettings.AutoHideDesktopLyricsOnPlayingDetail;
             }
@@ -99,21 +86,6 @@ namespace WinUIMusicPlayer.DesktopLyrics
 
         /// <summary>设置页样式变更提交后调用（防抖定时器合并多次变更）。</summary>
         public void RefreshStyleFromSettings() => Style = BuildStyleFromSettings();
-
-        /// <summary>同步落盘窗口边界。仅在窗口关闭 / 恢复默认边界 / 退出时调用；
-        /// 拖动过程中的位置变化只在内存更新（窗口 OnAppWindowChanged），不落盘。</summary>
-        public void PersistBounds()
-        {
-            EnsureBoundsLoaded();
-            try
-            {
-                _database.SaveDesktopLyricsState(BoundsState);
-            }
-            catch
-            {
-                // 退出阶段服务可能已释放
-            }
-        }
 
         private void PersistSettings()
         {
@@ -127,20 +99,6 @@ namespace WinUIMusicPlayer.DesktopLyrics
             catch
             {
                 // 退出阶段服务可能已释放，忽略
-            }
-        }
-
-        private void EnsureBoundsLoaded()
-        {
-            if (_boundsLoaded) return;
-            _boundsLoaded = true;
-            try
-            {
-                _boundsState = _database.LoadDesktopLyricsState();
-            }
-            catch
-            {
-                _boundsState = new SaveDesktopLyricsState();
             }
         }
 

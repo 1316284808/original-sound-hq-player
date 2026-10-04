@@ -14,29 +14,41 @@ using Windows.Graphics;
 using WinUIEx;
 using WinUIMusicPlayer.Helper;
 using WinUIMusicPlayer.Model;
+using WinUIMusicPlayer.Services;
 using WinUIMusicPlayer.ViewModel;
 using Windows.UI;
 
 namespace WinUIMusicPlayer.DesktopLyrics
 {
     /// <summary>
-    /// 桌面歌词悬浮窗：透明、置顶、不进任务栏/Alt-Tab。
+    /// 任务栏歌词条带：透明、置顶、不进任务栏/Alt-Tab，位置固定贴靠主任务栏（固定尺寸 400×60）。
     /// 基类与 spectrum 一致使用 WinUIEx.WindowEx。
-    /// 解锁态：标准窗口（标题栏 + 可调整大小），按住内容区任意位置拖动；
-    /// 锁定态：GWL_STYLE 移除标题栏/边框位 + OR-in WS_POPUP（WinUIEx ToggleWindowStyle，
-    /// 含 SWP_FRAMECHANGED）+ 整窗点击穿透常开（WS_EX_LAYERED 进锁定态一次性设置常驻，
-    /// 运行期只切 WS_EX_TRANSPARENT）；鼠标悬停窗口时仅"显示"右上角按钮组，
-    /// 光标移到按钮上才临时取消穿透供点击（游标轮询两档：悬停窗口期 50ms 快轮询保证跟手，
-    /// 其余 200ms 慢轮询只做进窗检测与自愈，BetterLyrics OverlayInputHelper 思路），
-    /// 慢轮询附带自愈：窗口被前后台切换偶发置为不可见/最小化时无焦点拉回并重申置顶。
+    /// 贴靠：FindWindow(Shell_TrayWnd) + GetWindowRect 取任务栏矩形，横向任务栏才贴靠其左侧，
+    ///       否则回退主屏工作区底部；750ms 定时比对几何/HWND，变化才重新定位（参考 MusicBar）。
+    /// 置顶：任务栏是特殊的 topmost band 窗口，单次设置不保证始终盖住，故 750ms 定时重申
+    ///       SetWindowPos(HWND_TOPMOST, NOMOVE|NOSIZE|NOACTIVATE|NOOWNERZORDER)（MusicBar 同款）。
+    /// 窗口样式：GWL_STYLE 移除标题栏/边框位 + OR-in WS_POPUP（WinUIEx ToggleWindowStyle，
+    ///       含 SWP_FRAMECHANGED）+ 不可调整大小 + 去掉 DWM 系统投影/圆角/细边框
+    ///       （WindowHelper.RemoveWindowDecoration，否则轮廓外仍有阴影、无法融入任务栏）；
+    ///       整窗点击穿透常开（WS_EX_LAYERED 一次性设置常驻，
+    ///       运行期只切 WS_EX_TRANSPARENT），光标移到条带右侧按钮区才临时取消穿透供点击
+    ///       （游标轮询两档：悬停窗口期 50ms 快轮询保证跟手，其余 200ms 慢轮询只做进窗检测与自愈，
+    ///       BetterLyrics OverlayInputHelper 思路），慢轮询附带自愈：窗口被前后台切换偶发
+    ///       置为不可见/最小化时无焦点拉回并重申置顶。
+    /// 自动隐藏：系统开启「自动隐藏任务栏」且任务栏当前收起时条带一并隐藏，弹出后恢复。
     /// </summary>
     public sealed partial class DesktopLyricsWindow : WinUIEx.WindowEx, IDisposable
     {
-        private const int DefaultWidth = 1800;
-        private const int DefaultHeight = 280;
-        private const int BottomMargin = 60;
-        private const double HoverPollingIntervalMs = 50;    // 悬停窗口期间：按钮组显隐/穿透切换要跟手
-        private const double IdlePollingIntervalMs = 200;    // 锁定态静默期：进窗检测 + 自愈
+        /// <summary>条带固定宽度（不随任务栏宽度变化）。</summary>
+        private const int FixedWidth = 600;
+        /// <summary>贴靠任务栏左侧的外边距（与 MusicBar 一致）。</summary>
+        private const int LeftMargin = 20;
+        /// <summary>条带固定高度（底边对齐任务栏底部，不再随任务栏高度变化）。</summary>
+        private const int BarHeight = 70;
+        /// <summary>贴靠刷新节拍：重申置顶 + 任务栏几何/自动隐藏变化检测（MusicBar 同款 750ms）。</summary>
+        private const double DockPollingIntervalMs = 750;
+        private const double HoverPollingIntervalMs = 50;    // 悬停窗口期间：穿透切换要跟手
+        private const double IdlePollingIntervalMs = 200;    // 静默期：进窗检测 + 自愈
         private const double ControlPanelHoverMargin = 6.0;
         private const double AdaptiveSamplingIntervalMs = 1000;   // 环境取色轮询周期（BetterLyrics 同款 1s）
         private const double AdaptiveSwitchThreshold = 128;       // 环境 YIQ 亮度中位数阈值：低于视为暗背景（白字）
@@ -46,21 +58,24 @@ namespace WinUIMusicPlayer.DesktopLyrics
         private readonly IntPtr _hwnd;
         private ThemeStyleHelper? _themeStyleHelper;
 
-        /// <summary>桌面歌词状态源（锁定图标绑定 / 按钮处理 / 边界与样式读写）。</summary>
+        /// <summary>桌面歌词状态源（开关 / 逐字 / 样式）。</summary>
         public DesktopLyricsViewModel ViewModel { get; } = App.Services.GetRequiredService<DesktopLyricsViewModel>();
-        private bool _locked = true;
+
+        /// <summary>条带按钮的播放控制命令（上一曲 / 播放暂停 / 下一曲），自带可用态守卫。</summary>
+        public PlaybackCommands Playback { get; } = App.Services.GetRequiredService<PlaybackCommands>();
+
         private bool _clickThrough;              // 当前穿透样式状态（false = 尚未设置）
         private bool _cursorOverPanel;
         private DispatcherQueueTimer? _hoverTimer;   // 50ms，仅光标悬停窗口期间运行
-        private DispatcherQueueTimer? _idleTimer;    // 200ms，锁定态常驻：进窗检测 + 自愈
-        private WindowStyle? _originalWindowStyle;   // 首次锁定前缓存的解锁态样式
+        private DispatcherQueueTimer? _idleTimer;    // 200ms，常驻：进窗检测 + 自愈
+        private DispatcherQueueTimer? _dockTimer;    // 750ms：贴靠刷新 + 重申置顶 + 自动隐藏同步
         private bool _disposed;
         private bool _isOverlayVisible = true;
 
-        private bool _isDragging;
-        private WindowHelper.POINT _dragStartCursor;
-        private PointInt32 _dragStartWindowPos;
-        private RectInt32? _panelScreenRectCache;   // 按钮组屏幕矩形缓存（含悬停外扩）；窗口位置/尺寸变化时失效
+        private IntPtr _lastTaskbarHwnd;            // 上次贴靠的任务栏（HWND 变化 = explorer 重启）
+        private WindowHelper.RECT _lastTaskbarRect; // 上次贴靠的任务栏矩形，变化才重新定位
+        private bool _taskbarHidden;                // 任务栏自动隐藏且当前收起 → 条带一并隐藏
+        private RectInt32? _panelScreenRectCache;   // 按钮区屏幕矩形缓存（含悬停外扩）；窗口位置/尺寸变化时失效
         private DispatcherQueueTimer? _adaptiveColorTimer;
         private bool? _adaptiveIsDarkBackground;    // 上次明暗判定（null=未判定），滞回切换的基准
         private Color? _lastAdaptiveTextColor;      // 当前应用的取色文字色（判定不变则跳过重绘）
@@ -78,6 +93,12 @@ namespace WinUIMusicPlayer.DesktopLyrics
             SystemBackdrop = new TransparentTintBackdrop();
             ConfigureWindow();
             UpdateAdaptiveColorMode();
+
+            // 贴靠任务栏：先立窗口样式（无边框/穿透/置顶）再定位，最后起 750ms 刷新节拍
+            ApplyOverlayStyle();
+            DockToTaskbar();
+            StartDockTimer();
+            StartCursorPolling();
 
             // 跟随主程序明暗主题（MusicDetailsWindow 同款）：只转发 themeChanged，
             // 不调用 SetAppStyle——覆盖窗口需保持全透明背景，不能被换成亚克力/云母
@@ -109,10 +130,9 @@ namespace WinUIMusicPlayer.DesktopLyrics
             {
                 StopHoverTimer();
                 StopIdleTimer();
+                StopDockTimer();
                 StopAdaptiveColorTimer();
                 _renderer?.SetSuspended(true);
-                _isDragging = false;
-                RootGrid.ReleasePointerCaptures();
                 AppWindow.Hide();
                 return;
             }
@@ -120,41 +140,37 @@ namespace WinUIMusicPlayer.DesktopLyrics
             LyricsSyncRequestBus.Request();
             _renderer?.SetSuspended(false);
             WindowHelper.RestoreOverlay(_hwnd);
-            ApplyLock(ViewModel.IsLocked);
+            ApplyOverlayStyle();
+            DockToTaskbar();
+            StartDockTimer();
             UpdateAdaptiveColorMode();
         }
 
-        /// <summary>窗口创建后由 Manager 以 VM 初值调用一次；后续锁定变化经 ViewModel.PropertyChanged 触发（幂等）。</summary>
-        public void ApplyLock(bool locked)
+        /// <summary>
+        /// 条带窗口样式：无边框无标题栏、不可调整大小、置顶、整窗点击穿透常开。
+        /// 替代原「锁定/解锁」两套样式——位置固定贴靠任务栏后不再需要解锁态。
+        /// </summary>
+        private void ApplyOverlayStyle()
         {
-            _locked = locked;
-            // LAYERED 常驻且只在进锁定态时设置一次（穿透开关只切 TRANSPARENT）：
+            // LAYERED 常驻且只设置一次（穿透开关只切 TRANSPARENT）：
             // 运行期反复增删 LAYERED 会与 DWM 分层合成竞态，前后台切换时偶发整窗隐身
-            if (locked) WindowHelper.EnsureLayered(_hwnd);
-            ApplyClickThrough(locked);
-            if (locked)
+            WindowHelper.EnsureLayered(_hwnd);
+            ApplyClickThrough(true);
+
+            // GWL_STYLE：移除标题栏/边框位 + OR-in WS_POPUP（均含 SWP_FRAMECHANGED 立即重算）
+            this.ToggleWindowStyle(false, WindowStyle.Caption | WindowStyle.ThickFrame);
+            this.ToggleWindowStyle(true, WindowStyle.Popup | WindowStyle.Visible);
+            // presenter 意图同步为无边框，防止其簿记在后续事件中重放 WS_THICKFRAME
+            if (AppWindow.Presenter is OverlappedPresenter presenter)
             {
-                // GWL_STYLE：移除标题栏/边框位 + OR-in WS_POPUP（均含 SWP_FRAMECHANGED 立即重算）
-                _originalWindowStyle ??= this.GetWindowStyle();
-                this.ToggleWindowStyle(false, WindowStyle.Caption | WindowStyle.ThickFrame);
-                this.ToggleWindowStyle(true, WindowStyle.Popup | WindowStyle.Visible);
-                // presenter 意图同步为无边框，防止其簿记在后续事件中重放 WS_THICKFRAME
-                if (AppWindow.Presenter is OverlappedPresenter presenter)
-                    presenter.SetBorderAndTitleBar(false, false);
+                presenter.SetBorderAndTitleBar(false, false);
+                presenter.IsResizable = false;
+                presenter.IsAlwaysOnTop = true;
             }
-            else
-            {
-                if (_originalWindowStyle is { } style)
-                    this.SetWindowStyle(style);
-                // presenter 意图同步回解锁基线（与 ConfigureWindow 一致）
-                if (AppWindow.Presenter is OverlappedPresenter presenter)
-                    presenter.SetBorderAndTitleBar(true, false);
-                _originalWindowStyle = null;   // spectrum 同款：还原后清除缓存，下次锁定重新缓存
-            }
+            // 去掉 DWM 系统投影/圆角/细边框（无边框样式仍会残留系统阴影，仅靠 XAML 去不掉）；
+            // 需在 GWL_STYLE 变更（SWP_FRAMECHANGED）之后调用，避免被重算覆盖
+            WindowHelper.RemoveWindowDecoration(_hwnd);
             InvalidatePanelScreenRect();   // 边框样式切换可能改变客户区原点
-            UpdateControlPanelVisual();
-            // 切锁定样式会写入 WS_VISIBLE；隐藏策略优先，避免托盘操作意外显示。
-            if (!_isOverlayVisible) AppWindow.Hide();
         }
 
     /// <summary>
@@ -284,9 +300,6 @@ namespace WinUIMusicPlayer.DesktopLyrics
         {
             switch (e.PropertyName)
             {
-                case nameof(DesktopLyricsViewModel.IsLocked):
-                    if (_isOverlayVisible) ApplyLock(ViewModel.IsLocked);
-                    break;
                 case nameof(DesktopLyricsViewModel.IsKaraokeEnabled):
                     EnsureRenderer(ViewModel.IsKaraokeEnabled);
                     LyricsSyncRequestBus.Request();   // 新渲染器重拉歌词/进度全量快照
@@ -297,22 +310,6 @@ namespace WinUIMusicPlayer.DesktopLyrics
             }
         }
 
-        /// <summary>恢复默认尺寸并置于主屏工作区底部居中（重置按钮调用）。</summary>
-        public void ApplyDefaultBounds()
-        {
-            var bounds = ViewModel.BoundsState;
-            var work = DisplayArea.Primary.WorkArea;
-            int x = work.X + (work.Width - DefaultWidth) / 2;
-            int y = work.Y + work.Height - DefaultHeight - BottomMargin;
-            WindowSizeHelper.MoveAndResizeExact(AppWindow, x, y, DefaultWidth, DefaultHeight);
-            bounds.HasBounds = true;
-            bounds.X = x;
-            bounds.Y = y;
-            bounds.Width = DefaultWidth;
-            bounds.Height = DefaultHeight;
-            ViewModel.PersistBounds();
-        }
-
         public void Dispose()
         {
             if (!_disposed) Close();
@@ -320,34 +317,130 @@ namespace WinUIMusicPlayer.DesktopLyrics
 
         private void ConfigureWindow()
         {
-            // MainWindow 同款组合：内容延伸进标题栏 + SetBorderAndTitleBar(true,false) 移除
-            // 系统标题栏与右上角系统按钮，保留边框与边缘调整大小。此为解锁态基线，
-            // 锁定时在其上做 GWL_STYLE 切换（见 ApplyLock）。
             AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode;
             AppWindow.TitleBar.ExtendsContentIntoTitleBar = true;
             AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Standard;
             this.SetTitleBarBackgroundColors(Colors.Transparent);
-            if (AppWindow.Presenter is OverlappedPresenter presenter)
-            {
-                presenter.SetBorderAndTitleBar(true, false);
-                presenter.IsAlwaysOnTop = true;
-            }
+            // 不进 Alt-Tab / 任务栏（MusicBar 用 WS_EX_TOOLWINDOW 达成同样效果）
             AppWindow.IsShownInSwitchers = false;
+        }
 
-            var bounds = ViewModel.BoundsState;
-            int width = bounds.Width > 0 ? bounds.Width : DefaultWidth;
-            int height = bounds.Height > 0 ? bounds.Height : DefaultHeight;
-            if (bounds.HasBounds &&
-                WindowSizeHelper.IsBoundsOnScreen(bounds.X, bounds.Y, width, height))
+        /// <summary>
+        /// 贴靠主任务栏：宽度固定 FixedWidth，高度取任务栏高度，贴任务栏左侧（留 LeftMargin）。
+        /// 仅横向任务栏（底/顶）贴靠；未探测到任务栏或竖直任务栏时回退主屏工作区底部（MusicBar 同款策略）。
+        /// 矩形均为物理像素，与 GetWindowRect / AppWindow.Move 同坐标系，无需 DPI 换算。
+        /// </summary>
+        private void DockToTaskbar()
+        {
+            var info = TaskbarInfoProvider.GetPrimary();
+            int x, y, height;
+
+            if (info.Found && info.IsHorizontal)
             {
-                // 多显示器：IsBoundsOnScreen 遍历所有显示器 WorkArea 校验可见性。
-                // 跨 DPI 显示器还原需先 Move 后 Resize,见 WindowSizeHelper.MoveAndResizeExact
-                WindowSizeHelper.MoveAndResizeExact(AppWindow, bounds.X, bounds.Y, width, height);
+                height = BarHeight;
+                x = info.X + LeftMargin;
+                // 底边对齐任务栏底部（条带可能高于任务栏，向上溢出）
+                y = info.Y + info.Height - BarHeight;
+                _lastTaskbarHwnd = info.Hwnd;
+                _lastTaskbarRect = new WindowHelper.RECT
+                {
+                    Left = info.X,
+                    Top = info.Y,
+                    Right = info.X + info.Width,
+                    Bottom = info.Y + info.Height,
+                };
             }
             else
             {
-                ApplyDefaultBounds();
+                var work = DisplayArea.Primary.WorkArea;
+                height = BarHeight;
+                x = work.X + LeftMargin;
+                y = work.Y + work.Height - height;
+                _lastTaskbarHwnd = IntPtr.Zero;
+                _lastTaskbarRect = default;
             }
+
+            WindowSizeHelper.MoveAndResizeExact(AppWindow, x, y, FixedWidth, height);
+            InvalidatePanelScreenRect();   // 位置/尺寸变化后按钮区屏幕矩形需重算
+            KeepAboveTaskbar();
+        }
+
+        /// <summary>重申置顶（不动位置/尺寸/焦点）：任务栏是特殊的 topmost band 窗口，单次设置不足以保证层级。</summary>
+        private void KeepAboveTaskbar() => WindowHelper.KeepTopmost(_hwnd);
+
+        private void StartDockTimer()
+        {
+            if (_dockTimer is null)
+            {
+                _dockTimer = DispatcherQueue.CreateTimer();
+                _dockTimer.Interval = TimeSpan.FromMilliseconds(DockPollingIntervalMs);
+                _dockTimer.Tick += OnDockTimerTick;
+            }
+            _dockTimer.Start();
+        }
+
+        private void StopDockTimer() => _dockTimer?.Stop();
+
+        /// <summary>750ms 节拍：任务栏自动隐藏同步 → 几何/HWND 变化重新贴靠 → 重申置顶。</summary>
+        private void OnDockTimerTick(DispatcherQueueTimer sender, object args)
+        {
+            if (_disposed || !_isOverlayVisible)
+            {
+                sender.Stop();
+                return;
+            }
+
+            var info = TaskbarInfoProvider.GetPrimary();
+            bool hidden = info.Found && info.AutoHideEnabled && info.IsHidden;
+            if (hidden != _taskbarHidden)
+            {
+                _taskbarHidden = hidden;
+                if (hidden) HideForHiddenTaskbar();
+                else RestoreFromHiddenTaskbar();
+                return;
+            }
+            if (hidden) return;
+
+            // 矩形或 HWND 变化才重新定位：HWND 变化覆盖 explorer 重启，矩形变化覆盖改高度/分辨率/缩放；
+            // 也顺带处理窗口被前后台切换偶发置为不可见/最小化（自愈）
+            bool geometryChanged = !info.Found
+                ? _lastTaskbarHwnd != IntPtr.Zero
+                : info.Hwnd != _lastTaskbarHwnd
+                  || info.X != _lastTaskbarRect.Left
+                  || info.Y != _lastTaskbarRect.Top
+                  || info.Width != _lastTaskbarRect.Width
+                  || info.Height != _lastTaskbarRect.Height;
+
+            if (geometryChanged || !WindowHelper.IsWindowVisible(_hwnd) || WindowHelper.IsIconic(_hwnd))
+            {
+                DockToTaskbar();
+                return;
+            }
+
+            KeepAboveTaskbar();
+        }
+
+        /// <summary>任务栏收起：条带一并隐藏并停下所有轮询与渲染。</summary>
+        private void HideForHiddenTaskbar()
+        {
+            StopHoverTimer();
+            StopIdleTimer();
+            StopAdaptiveColorTimer();
+            _renderer?.SetSuspended(true);
+            AppWindow.Hide();
+        }
+
+        /// <summary>任务栏弹出：恢复显示并重拉全量歌词快照。</summary>
+        private void RestoreFromHiddenTaskbar()
+        {
+            LyricsSyncRequestBus.Request();
+            _renderer?.SetSuspended(false);
+            WindowHelper.RestoreOverlay(_hwnd);
+            DockToTaskbar();
+            StartCursorPolling();
+            UpdateAdaptiveColorMode();
+            // 切样式会写入 WS_VISIBLE；若期间用户已从托盘关闭歌词，隐藏优先
+            if (!_isOverlayVisible) AppWindow.Hide();
         }
 
         private void ApplyClickThrough(bool enable)
@@ -357,20 +450,12 @@ namespace WinUIMusicPlayer.DesktopLyrics
             WindowHelper.SetClickThrough(_hwnd, enable);
         }
 
-        private void UpdateControlPanelVisual()
+        /// <summary>开启光标轮询（慢轮询常驻：进窗检测 + 自愈；快轮询在光标进入窗口时才起）。</summary>
+        private void StartCursorPolling()
         {
-            if (_locked && _isOverlayVisible)
-            {
-                _cursorOverPanel = false;
-                ControlPanel.Opacity = 0;
-                StartIdleTimer();
-            }
-            else
-            {
-                StopHoverTimer();
-                StopIdleTimer();
-                ControlPanel.Opacity = 1;
-            }
+            if (!_isOverlayVisible) return;
+            _cursorOverPanel = false;
+            StartIdleTimer();
         }
 
         private void StartHoverTimer()
@@ -405,10 +490,10 @@ namespace WinUIMusicPlayer.DesktopLyrics
             _idleTimer?.Stop();
         }
 
-        /// <summary>锁定态静默期轮询（200ms）：自愈 + 进窗检测；一旦发现光标悬停窗口即切入 50ms 快轮询。</summary>
+        /// <summary>静默期轮询（200ms）：自愈 + 进窗检测；一旦发现光标悬停窗口即切入 50ms 快轮询。</summary>
         private void OnIdleTimerTick(DispatcherQueueTimer sender, object args)
         {
-            if (!_locked || !_isOverlayVisible)
+            if (!_isOverlayVisible)
             {
                 sender.Stop();
                 return;
@@ -421,19 +506,17 @@ namespace WinUIMusicPlayer.DesktopLyrics
             }
             if (WindowHelper.GetCursorPos(out WindowHelper.POINT cursor) && IsCursorOverWindow(cursor))
             {
-                ControlPanel.Opacity = 1.0;   // 悬停窗口 = 仅显示按钮组（穿透保持，绝不因进入窗口而取消）
                 StartHoverTimer();
             }
         }
 
         private void OnHoverTimerTick(DispatcherQueueTimer sender, object args)
         {
-            // 离开窗口：还原按钮组与穿透，停快轮询，回到慢速自愈轮询
-            if (!_isOverlayVisible || !_locked || !WindowHelper.GetCursorPos(out WindowHelper.POINT cursor) || !IsCursorOverWindow(cursor))
+            // 离开窗口：恢复穿透、停快轮询，回到慢速自愈轮询
+            if (!_isOverlayVisible || !WindowHelper.GetCursorPos(out WindowHelper.POINT cursor) || !IsCursorOverWindow(cursor))
             {
                 sender.Stop();
                 _cursorOverPanel = false;
-                ControlPanel.Opacity = 0;
                 ApplyClickThrough(true);
                 return;
             }
@@ -456,8 +539,8 @@ namespace WinUIMusicPlayer.DesktopLyrics
         }
 
         /// <summary>
-        /// 游标是否悬停在右上角按钮组上。屏幕矩形按窗口位置/尺寸变化缓存
-        /// （见 <see cref="InvalidatePanelScreenRect"/>）：锁定态轮询期间窗口静止，
+        /// 游标是否悬停在条带右侧的按钮区上。屏幕矩形按窗口位置/尺寸变化缓存
+        /// （见 <see cref="InvalidatePanelScreenRect"/>）：贴靠后窗口静止，
         /// 命中缓存时纯数值比较，避免每 tick 的 TransformToVisual 分配与 XAML 调用。
         /// </summary>
         private bool IsCursorOverControlPanel(WindowHelper.POINT cursor)
@@ -484,52 +567,9 @@ namespace WinUIMusicPlayer.DesktopLyrics
         /// <summary>按钮组屏幕矩形依赖窗口位置/尺寸/DPI，变化后需重算。</summary>
         private void InvalidatePanelScreenRect() => _panelScreenRectCache = null;
 
-        private void LockButton_Click(object sender, RoutedEventArgs e)
-        {
-            ViewModel.IsLocked = !ViewModel.IsLocked;
-        }
-
-        private void ResetButton_Click(object sender, RoutedEventArgs e)
-        {
-            DesktopLyricsManager.ResetWindowBounds();
-        }
-
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
             ViewModel.IsEnabled = false;
-        }
-
-        // ==== 手动拖动：按住任意位置拖动（GetCursorPos 与 AppWindow.Position 均为物理像素） ====
-
-        private void RootGrid_PointerPressed(object sender, PointerRoutedEventArgs e)
-        {
-            if (_locked) return;
-            if (!e.GetCurrentPoint(RootGrid).Properties.IsLeftButtonPressed) return;
-            if (!WindowHelper.GetCursorPos(out _dragStartCursor)) return;
-            _dragStartWindowPos = AppWindow.Position;
-            _isDragging = true;
-            RootGrid.CapturePointer(e.Pointer);
-        }
-
-        private void RootGrid_PointerMoved(object sender, PointerRoutedEventArgs e)
-        {
-            if (!_isDragging || !WindowHelper.GetCursorPos(out WindowHelper.POINT cursor)) return;
-            AppWindow.Move(new PointInt32(
-                _dragStartWindowPos.X + cursor.X - _dragStartCursor.X,
-                _dragStartWindowPos.Y + cursor.Y - _dragStartCursor.Y));
-        }
-
-        private void RootGrid_PointerReleased(object sender, PointerRoutedEventArgs e) => EndDrag(e);
-
-        private void RootGrid_PointerCanceled(object sender, PointerRoutedEventArgs e) => EndDrag(e);
-
-        private void RootGrid_PointerCaptureLost(object sender, PointerRoutedEventArgs e) => _isDragging = false;
-
-        private void EndDrag(PointerRoutedEventArgs e)
-        {
-            if (!_isDragging) return;
-            _isDragging = false;
-            RootGrid.ReleasePointerCapture(e.Pointer);
         }
 
         // ==== 数据总线转发 ====
@@ -558,23 +598,8 @@ namespace WinUIMusicPlayer.DesktopLyrics
         {
             // z 序变动后若被挤出置顶层（其他置顶窗口切换可致），幂等重申，防"被盖住"表现为消失
             if (_isOverlayVisible && args.DidZOrderChange) WindowHelper.EnsureTopmost(_hwnd);
-            if (!args.DidPositionChange && !args.DidSizeChange) return;
-            InvalidatePanelScreenRect();
-            var bounds = ViewModel.BoundsState;
-            if (args.DidPositionChange)
-            {
-                PointInt32 pos = sender.Position;
-                bounds.HasBounds = true;
-                bounds.X = pos.X;
-                bounds.Y = pos.Y;
-            }
-            if (args.DidSizeChange)
-            {
-                SizeInt32 size = sender.Size;
-                bounds.Width = size.Width;
-                bounds.Height = size.Height;
-            }
-            // 不在此处落盘：按约定仅在关闭窗口 / ApplyDefaultBounds（HasBounds 建立）/ 退出时记录
+            // 位置/尺寸只影响按钮区屏幕矩形缓存（贴靠由 750ms 定时器负责，不再记边界）
+            if (args.DidPositionChange || args.DidSizeChange) InvalidatePanelScreenRect();
         }
 
         private void MainWindow_themeChanged(object? sender, EventArgs e)
@@ -597,8 +622,8 @@ namespace WinUIMusicPlayer.DesktopLyrics
             Closed -= OnWindowClosed;
             StopHoverTimer();
             StopIdleTimer();
+            StopDockTimer();
             StopAdaptiveColorTimer();
-            ViewModel.PersistBounds();
             _renderer?.Dispose();
             _renderer = null;
             _disposed = true;

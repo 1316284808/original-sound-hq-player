@@ -60,6 +60,13 @@ public sealed partial class SettingsActions(AppState state, MusicDatabaseService
         state.Preferences.ThemeType = type;
     }
 
+    /// <summary>亮/暗互切：以当前生效主题为基准（跟随系统时按系统当前深浅决定目标）。</summary>
+    [RelayCommand]
+    private void OnToggleTheme()
+    {
+        state.Preferences.ThemeType = state.Preferences.IsDarkMode ? "Light" : "Dark";
+    }
+
     [RelayCommand]
     private async Task OpenLogPath()
     {

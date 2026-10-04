@@ -5,12 +5,13 @@
     xmlns:animations="using:WinUIMusicPlayer.Helper.Animations">
 
     <Style x:Key="TitleBarButtonStyle" TargetType="Button">
+        <Setter Property="Margin" Value="5"/>
+        <Setter Property="MinHeight" Value="35"/>
+        <Setter Property="MinWidth" Value="40"/>
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="10,8" />
-        <Setter Property="MinWidth" Value="40" />
-        <Setter Property="MinHeight" Value="32" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="CornerRadius" Value="8" />
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />

@@ -17,58 +17,189 @@
     IsTabStop="True"
     TabIndex="0"
     mc:Ignorable="d">
+    <Page.Resources>
+        <!--  全部播放 / 随机播放：默认无边框无强调色，仅在获得焦点时显现边框与强调色，两按钮风格统一  -->
+        <Style x:Key="SubtlePlayButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="UseSystemFocusVisuals" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border
+                                x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="{TemplateBinding CornerRadius}"
+                                Opacity="0" />
+                            <ContentPresenter
+                                x:Name="ContentPresenter"
+                                Padding="{TemplateBinding Padding}"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                AutomationProperties.AccessibilityView="Raw"
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                ContentTransitions="{TemplateBinding ContentTransitions}"
+                                Foreground="{TemplateBinding Foreground}" />
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="FocusStates">
+                                    <VisualState x:Name="Focused">
+                                        <Storyboard>
+                                            <DoubleAnimation
+                                                Storyboard.TargetName="ButtonBorder"
+                                                Storyboard.TargetProperty="Opacity"
+                                                To="1"
+                                                Duration="0:0:0.15" />
+                                        </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="Unfocused">
+                                        <Storyboard>
+                                            <DoubleAnimation
+                                                Storyboard.TargetName="ButtonBorder"
+                                                Storyboard.TargetProperty="Opacity"
+                                                To="0"
+                                                Duration="0:0:0.15" />
+                                        </Storyboard>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Page.Resources>
     <Grid Margin="0" RowDefinitions="Auto,Auto,*">
         <Grid
             x:Name="TopPanel"
             Grid.Row="0"
+            RowDefinitions="Auto,Auto"
             Visibility="Visible">
-            <StackPanel Orientation="Horizontal">
+            <Grid Grid.Row="0">
                 <TextBlock
-                    x:Uid="MusicBrowsePageTitle"
                     Margin="16,10,16,10"
                     VerticalAlignment="Center"
-                    FontSize="28" />
-                <SelectorBar
-                    x:Name="selectPage"
+                    FontSize="28"
+                    Text="{x:Bind ViewModel.AppViewModel.PageTitle, Mode=OneWay}" />
+
+            </Grid>
+
+            <!--  全部播放 / 随机播放 / 搜索 / 排序 / 来源：同一行；左侧操作 + 弹性空列(*) + 右侧来源靠右  -->
+            <Grid
+                Grid.Row="1"
+                Margin="16,0,16,10"
+                ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                <Button Grid.Column="0"
+                    Command="{x:Bind ViewModel.PlayAllCommand, Mode=OneWay}"
+                    Style="{StaticResource MenuButtonStyle}"
+                        BorderBrush="Transparent"
+                        Background="Transparent"
+                    VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <FontIcon FontSize="14" helper:IconGlyph.IconKind="Play" />
+                        <TextBlock
+                            x:Uid="PlayAll"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Grid.Column="1"
+                    Command="{x:Bind ViewModel.ShufflePlayCommand, Mode=OneWay}"
+                     Style="{StaticResource MenuButtonStyle}"
+      BorderBrush="Transparent"
+      Background="Transparent"
+                    VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <FontIcon FontSize="14" helper:IconGlyph.IconKind="Shuffle" />
+                        <TextBlock
+                            x:Uid="ShufflePlay"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <!--  高度固定为 35（与同行的 MenuButtonStyle 按钮一致）：否则折叠时高度由搜索图标决定、
+                      展开时由输入框决定，点一下搜索按钮整行会抖一下  -->
+                <Button Grid.Column="2" 
+                    Command="{x:Bind ViewModel.AppViewModel.SearchToggleCommand, Mode=OneWay}"
+                    ToolTipService.ToolTip="搜索"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Height="35"
+                    Padding="8,0"
                     VerticalAlignment="Center"
-                    SelectedItem="{x:Bind ViewModel.SelectedPage, Mode=OneWay}"
-                    SelectionChanged="SelectPage_SelectionChanged">
-                    <SelectorBarItem
-                        x:Name="Song"
-                        x:Uid="SongTab"
-                        FontSize="18"
-                        Tag="song" />
-                    <SelectorBarItem
-                        x:Name="Album"
-                        x:Uid="AlbumTab"
-                        FontSize="18"
-                        Tag="album" />
-                    <SelectorBarItem
-                        x:Name="Artist"
-                        x:Uid="ArtistTab"
-                        FontSize="18"
-                        Tag="artist" />
-                    <SelectorBarItem
-                        x:Name="Folder"
-                        x:Uid="FolderTab"
-                        FontSize="18"
-                        Tag="folder" />
-                    <SelectorBarItem
-                        x:Name="Favourite"
-                        x:Uid="FavouriteTab"
-                        FontSize="18"
-                        Tag="favourite" />
-                </SelectorBar>
-            </StackPanel>
-
-
-            <!--  顶栏右侧只保留设备与排序选择；传输/重扫进度统一由 MainPage 全页进度层显示  -->
-            <StackPanel
-                Margin="16,10,16,10"
-                HorizontalAlignment="Right"
-                VerticalAlignment="Center"
-                Orientation="Horizontal">
-                <ComboBox
+                    VerticalContentAlignment="Center">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <FontIcon  FontSize="14"  helper:IconGlyph.IconKind="Search" Margin="0,0,4,0" />
+                       
+                        <AutoSuggestBox 
+     x:Name="SearchAutoSuggestBox"
+     x:Uid="SearchMusic"
+                                 FontSize="12"        Height="30" MinHeight="0" Margin="0"
+     Width="{x:Bind ViewModel.AppViewModel.IsSearchExpanded, Mode=OneWay, Converter={StaticResource BoolToDoubleConverter}}"
+     Visibility="{x:Bind ViewModel.AppViewModel.IsSearchExpanded, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+     VerticalAlignment="Center"
+                 Background="{ThemeResource TextControlBackground}"
+                 BorderBrush="Transparent" 
+     Text="{x:Bind ViewModel.AppViewModel.SearchText, Mode=TwoWay}">
+                            <!--  背景不能是纯 Transparent：WinUI bug #9005——背景 Alpha=0 时输入光标（caret）按背景反色
+                                  退化成白色，亮色主题下完全看不见。这里改成随主题的“近乎透明”（Alpha=0x0A，
+                                  视觉上等同透明但 Alpha≠0），亮色取浅色→光标深色，暗色取深色→光标浅色。
+                                  另外默认模板在 PointerOver/Focused 等视觉状态里会重新赋值 TextControlBackground*，
+                                  视觉状态优先级高于样式与本地值，所以只能覆盖这些画刷本身  -->
+                            <AutoSuggestBox.Resources>
+                                <ResourceDictionary>
+                                    <ResourceDictionary.ThemeDictionaries>
+                                        <ResourceDictionary x:Key="Light">
+                                            <SolidColorBrush x:Key="TextControlBackground" Color="#0AFFFFFF" />
+                                            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#0AFFFFFF" />
+                                            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#0AFFFFFF" />
+                                            <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#0AFFFFFF" />
+                                        </ResourceDictionary>
+                                        <ResourceDictionary x:Key="Dark">
+                                            <SolidColorBrush x:Key="TextControlBackground" Color="#0A000000" />
+                                            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#0A000000" />
+                                            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#0A000000" />
+                                            <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#0A000000" />
+                                        </ResourceDictionary>
+                                    </ResourceDictionary.ThemeDictionaries>
+                                    <!--  内嵌 TextBox 的默认最小高度来自该主题资源，不压下来它会顶到 32 左右；
+                                          即便此键在当前 WinUI 版本未生效，按钮高度已固定，也不会影响布局  -->
+                                    <x:Double x:Key="TextControlThemeMinHeight">30</x:Double>
+                                    <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent" />
+                                    <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
+                                    <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
+                                    <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="Transparent" />
+                                </ResourceDictionary>
+                            </AutoSuggestBox.Resources>
+                        </AutoSuggestBox>
+                    </StackPanel>
+                   
+                </Button>
+               
+                <ComboBox Grid.Column="3"
+                    x:Name="SortByComboBox"
+                    Width="130"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderBrush="Transparent"
+                    BorderThickness="0"
+                    FontSize="12"
+                    ItemsSource="{x:Bind ViewModel.AppViewModel.SortOptions, Mode=OneWay}"
+                    SelectedItem="{x:Bind ViewModel.AppViewModel.SelectedSortOption, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="model:SortOption">
+                            <TextBlock FontSize="12" Text="{x:Bind DisplayText, Mode=OneWay}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <ComboBox Grid.Column="4"
                     x:Name="UsbDeviceCombox"
                     x:Uid="USBDevice"
                     Margin="10,0,10,0"
@@ -90,7 +221,7 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <ComboBox
+                <ComboBox Grid.Column="5"
                     Width="130"
                     Margin="0,0,4,0"
                     VerticalAlignment="Center"
@@ -101,26 +232,7 @@
                     FontSize="12"
                     ItemsSource="{x:Bind ViewModel.RemoteSources.Choices}"
                     SelectedItem="{x:Bind ViewModel.RemoteSources.SelectedSource, Mode=TwoWay}" />
-                <StackPanel Margin="0" Orientation="Horizontal">
-                    <ComboBox
-                        x:Name="SortByComboBox"
-                        Width="130"
-                        Margin="0,0,10,0"
-                        VerticalAlignment="Center"
-                        Background="Transparent"
-                        BorderBrush="Transparent"
-                        BorderThickness="0"
-                        FontSize="12"
-                        ItemsSource="{x:Bind ViewModel.AppViewModel.SortOptions, Mode=OneWay}"
-                        SelectedItem="{x:Bind ViewModel.AppViewModel.SelectedSortOption, Mode=TwoWay}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="model:SortOption">
-                                <TextBlock FontSize="12" Text="{x:Bind DisplayText, Mode=OneWay}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                </StackPanel>
-            </StackPanel>
+            </Grid>
         </Grid>
         <InfoBar
             x:Name="InfoBar"
@@ -159,7 +271,7 @@
                         <FontIcon
                             FontSize="44"
                             Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                            Glyph="&#xE8D6;" />
+                            helper:IconGlyph.IconKind="NowPlaying" />
                     </Border>
                     <TextBlock
                         x:Uid="MusicBrowseEmptyTitle"
@@ -182,7 +294,7 @@
                         Command="{x:Bind ViewModel.EmptyAddFolderCommand}"
                         Style="{StaticResource AccentButtonStyle}">
                         <StackPanel Orientation="Horizontal">
-                            <FontIcon Glyph="&#xE8B7;" />
+                            <FontIcon helper:IconGlyph.IconKind="SourceLocal" />
                             <TextBlock
                                 x:Uid="AddFolder"
                                 Margin="8,0,0,0"
@@ -198,7 +310,7 @@
                             VerticalAlignment="Center"
                             FontSize="12"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Glyph="&#xE8B7;" />
+                            helper:IconGlyph.IconKind="SourceLocal" />
                         <TextBlock
                             x:Uid="AddFolderPageDragHint"
                             Margin="6,0,0,0"
@@ -232,7 +344,7 @@
                             VerticalAlignment="Center"
                             FontSize="16"
                             Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                            Glyph="&#xE8B7;" />
+                            helper:IconGlyph.IconKind="SourceLocal" />
                         <TextBlock
                             x:Uid="AddFolderPageDropOverlayText"
                             Margin="8,0,0,0"

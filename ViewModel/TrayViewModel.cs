@@ -23,8 +23,6 @@ public sealed class TrayViewModel : ObservableObject, IDisposable
     public IRelayCommand ShowPlayingDetailCommand { get; }
     public IRelayCommand ToggleDesktopLyricsCommand { get; }
     public IRelayCommand ToggleDesktopLyricsKaraokeCommand { get; }
-    public IRelayCommand ToggleDesktopLyricsLockCommand { get; }
-    public IRelayCommand ResetDesktopLyricsBoundsCommand { get; }
 
     public TrayViewModel(AppLifecycle lifecycle, AppViewModel state, DesktopLyricsViewModel lyrics, PlaybackCommands playback)
     {
@@ -35,8 +33,6 @@ public sealed class TrayViewModel : ObservableObject, IDisposable
         ShowPlayingDetailCommand = ReadyCommand(() => { ShowWindow(); App.Services.GetRequiredService<MainPage>().NavigateToPlayingDetailPage(); });
         ToggleDesktopLyricsCommand = ReadyCommand(() => lyrics.IsEnabled = !lyrics.IsEnabled);
         ToggleDesktopLyricsKaraokeCommand = ReadyCommand(() => lyrics.IsKaraokeEnabled = !lyrics.IsKaraokeEnabled);
-        ToggleDesktopLyricsLockCommand = ReadyCommand(() => lyrics.IsLocked = !lyrics.IsLocked);
-        ResetDesktopLyricsBoundsCommand = ReadyCommand(DesktopLyricsManager.ResetWindowBounds);
         lifecycle.Changed += LifecycleChanged;
     }
     private RelayCommand ReadyCommand(Action action) => new(() => { if (IsReady) action(); }, () => IsReady);
@@ -55,7 +51,6 @@ public sealed class TrayViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsReady));
         OpenSettingsCommand.NotifyCanExecuteChanged(); ShowPlayingDetailCommand.NotifyCanExecuteChanged();
         ToggleDesktopLyricsCommand.NotifyCanExecuteChanged(); ToggleDesktopLyricsKaraokeCommand.NotifyCanExecuteChanged();
-        ToggleDesktopLyricsLockCommand.NotifyCanExecuteChanged(); ResetDesktopLyricsBoundsCommand.NotifyCanExecuteChanged();
     }
     public void Dispose() => _lifecycle.Changed -= LifecycleChanged;
 }

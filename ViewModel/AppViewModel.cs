@@ -52,6 +52,25 @@ namespace WinUIMusicPlayer.ViewModel
 
         public string SearchText { get => State.Browse.SearchText; set => State.Browse.SearchText = value; }
 
+        /// <summary>搜索框是否展开（折叠/展开切换状态，跨页保持）。</summary>
+        [ObservableProperty]
+        private bool _isSearchExpanded;
+
+        /// <summary>切换搜索框展开/折叠：首次点击展开并聚焦，再次点击清空文本并收起。</summary>
+        [RelayCommand]
+        private void SearchToggle()
+        {
+            if (!IsSearchExpanded)
+            {
+                IsSearchExpanded = true;
+            }
+            else
+            {
+                SearchText = string.Empty;
+                IsSearchExpanded = false;
+            }
+        }
+
         public List<Music> SongsSource
         {
             get => State.Library.Songs;
@@ -141,7 +160,42 @@ namespace WinUIMusicPlayer.ViewModel
         public string InfoBarTitle { get => State.Shell.InfoBarTitle; set => State.Shell.InfoBarTitle = value; }
         public bool InfoBarIsOpen { get => State.Shell.InfoBarIsOpen; set => State.Shell.InfoBarIsOpen = value; }
         public string InfoBarMessage { get => State.Shell.InfoBarMessage; set => State.Shell.InfoBarMessage = value; }
-        public string PageType { get; set; } = string.Empty;
+        private string _pageType = string.Empty;
+        /// <summary>当前浏览子页类型（song/album/artist/folder/favourite），变更时同步刷新大标题。</summary>
+        public string PageType
+        {
+            get => _pageType;
+            set
+            {
+                if (SetProperty(ref _pageType, value))
+                {
+                    OnPropertyChanged(nameof(PageTitle));
+                }
+            }
+        }
+        /// <summary>浏览页大标题：随 PageType 切换为对应本地化文本，与侧边栏路由项文本保持一致（浏览态 albumBrowse 等去 Browse 后缀映射）。</summary>
+        public string PageTitle
+        {
+            get
+            {
+                var key = _pageType;
+                if (key.EndsWith("Browse", StringComparison.OrdinalIgnoreCase))
+                {
+                    key = key.Substring(0, key.Length - "Browse".Length);
+                }
+                return _pageTypeToTitleKey.TryGetValue(key, out var resKey)
+                    ? GetString(resKey)
+                    : string.Empty;
+            }
+        }
+        private static readonly Dictionary<string, string> _pageTypeToTitleKey = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["song"] = "PageTitleAllSongs",
+            ["album"] = "PageTitleAlbumList",
+            ["artist"] = "PageTitleArtistList",
+            ["folder"] = "PageTitleFolder",
+            ["favourite"] = "PageTitleFavourite",
+        };
         public float ControlsStackOpacity { get; set => SetProperty(ref field, value); } = 0.0f;
         public bool IsBackBtnEnable { get; set => SetProperty(ref field, value); } = false;
         public TimeSpan LyricsDurationTime { get => State.Presentation.LyricsDurationTime; set => State.Presentation.LyricsDurationTime = value; }
@@ -338,6 +392,7 @@ namespace WinUIMusicPlayer.ViewModel
         public Music? FindFirstByArtist(string? artist) => _libraryQueries.FindFirstByArtist(artist);
         public Music? FindFirstByFolder(string? folder) => _libraryQueries.FindFirstByFolder(folder);
         public int GetAlbumSongCount(string? album) => _libraryQueries.GetAlbumSongCount(album);
+        public int GetArtistSongCount(string? artist) => _libraryQueries.GetArtistSongCount(artist);
         public void NotifyIdIndexChanged() => _libraryQueries.Invalidate();
 
         public event Action? SongsSourceChanged;

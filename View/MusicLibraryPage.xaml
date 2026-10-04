@@ -1,0 +1,428 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="WinUIMusicPlayer.View.MusicLibraryPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:helper="using:WinUIMusicPlayer.Helper"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:WinUIMusicPlayer.View.Controls"
+    xmlns:model="using:WinUIMusicPlayer.Model"
+    xmlns:sub="using:WinUIMusicPlayer.View.SubView"
+    xmlns:tools="using:WinUIMusicPlayer.Utils">
+
+    <!--  音乐库页：音乐来源管理（本地文件夹与 WebDAV，和 AddFolderViewModel 单例共用状态）+
+          自建播放列表（「最爱」作为内置列表置顶）。整页允许拖放文件夹，拖放行为与来源区一致。  -->
+    <Page.Resources>
+        <!--  分区标题  -->
+        <Style
+            x:Key="LibrarySectionTitleStyle"
+            BasedOn="{StaticResource BodyStrongTextBlockStyle}"
+            TargetType="TextBlock">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!--  卡片容器与分组小标题样式放在 App.xaml（本地文件夹与 WebDAV 来源卡片共用）  -->
+
+        <!--  内置列表磁贴（最爱）：平时无底色，悬停/按下才铺一层弱底色，与网格项的反馈保持一致  -->
+        <Style x:Key="LibraryTileButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid
+                            x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}">
+                            <ContentPresenter
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                ContentTransitions="{TemplateBinding ContentTransitions}" />
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="Transparent" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+    </Page.Resources>
+
+    <Grid
+        AllowDrop="True"
+        Background="Transparent"
+        DragLeave="Grid_DragLeave"
+        DragOver="Grid_DragOver"
+        Drop="Grid_Drop"
+        Unloaded="DropTarget_Unloaded">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="16,10,16,24" Spacing="20">
+
+                <!--  页标题  -->
+                <TextBlock x:Uid="MusicLibrary" FontSize="28" />
+
+                <!--  分区：音乐来源（本地文件夹 + WebDAV）  -->
+                <StackPanel Spacing="10">
+                    <TextBlock x:Uid="MusicSources" Style="{StaticResource LibrarySectionTitleStyle}" />
+
+                    <!--  本地文件夹：加载 / 空态 / 列表 / 拖放提示统一收在同一张卡片内，标题行“+”用于添加文件夹  -->
+                    <Border Style="{StaticResource LibraryCardStyle}">
+                        <StackPanel>
+                            <Grid
+                                Margin="14,8,14,6"
+                                ColumnDefinitions="Auto,Auto,*,Auto"
+                                ColumnSpacing="8">
+                                <TextBlock
+                                    Grid.Column="0"
+                                    Style="{StaticResource LibraryGroupTitleStyle}"
+                                    Text="{x:Bind tools:ToolUtils.GetString('MusicSourcesLocal')}" />
+                                <TextBlock
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{x:Bind ViewModel.FolderList.Count, Mode=OneWay}" />
+                                <Button
+                                    Grid.Column="3"
+                                    AutomationProperties.Name="{x:Bind tools:ToolUtils.GetString('MusicSourcesAdd')}"
+                                    Command="{x:Bind ViewModel.AddFolderCommand}"
+                                    Style="{StaticResource LibraryCardActionButtonStyle}"
+                                    ToolTipService.ToolTip="{x:Bind tools:ToolUtils.GetString('MusicSourcesAdd')}">
+                                    <FontIcon FontSize="16" helper:IconGlyph.IconKind="Add" />
+                                </Button>
+                            </Grid>
+
+                            <StackPanel
+                                Margin="14,8,14,8"
+                                Orientation="Horizontal"
+                                Spacing="10"
+                                Visibility="{x:Bind ViewModel.LoadingVisibility, Mode=OneWay}">
+                                <ProgressRing
+                                    Width="20"
+                                    Height="20"
+                                    IsActive="{x:Bind ViewModel.IsScanning, Mode=OneWay}" />
+                                <TextBlock x:Uid="ProcessingDataHint" VerticalAlignment="Center" />
+                            </StackPanel>
+
+                            <!--  空态：图标 + 说明，添加入口在分组标题右侧的“+”  -->
+                            <StackPanel
+                                Margin="14,4,14,14"
+                                Orientation="Horizontal"
+                                Spacing="12"
+                                Visibility="{x:Bind ViewModel.EmptyVisibility, Mode=OneWay}">
+                                <Border
+                                    Width="44"
+                                    Height="44"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                    CornerRadius="12">
+                                    <FontIcon
+                                        FontSize="20"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        helper:IconGlyph.IconKind="SourceLocal" />
+                                </Border>
+                                <TextBlock
+                                    x:Uid="MusicSourcesLocalEmpty"
+                                    VerticalAlignment="Center"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+
+                            <ListView
+                                IsTabStop="False"
+                                ItemsSource="{x:Bind ViewModel.FolderList, Mode=OneWay}"
+                                ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                SelectionMode="None"
+                                Visibility="{x:Bind ViewModel.ListVisibility, Mode=OneWay}">
+                                <ListView.ItemContainerStyle>
+                                    <Style BasedOn="{StaticResource DefaultListViewItemStyle}" TargetType="ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0" />
+                                        <Setter Property="MinHeight" Value="0" />
+                                        <Setter Property="CornerRadius" Value="8" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="model:Folder">
+                                        <Grid
+                                            MinHeight="56"
+                                            Padding="14,10"
+                                            ColumnDefinitions="Auto,*,Auto"
+                                            ColumnSpacing="12">
+                                            <!--  本地目录：点击在资源管理器打开；外部导入虚拟行无磁盘路径，只显示静态图标，保证各行左侧对齐  -->
+                                            <Button
+                                                Width="40"
+                                                Height="40"
+                                                Padding="0"
+                                                VerticalAlignment="Center"
+                                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                BorderBrush="Transparent"
+                                                BorderThickness="0"
+                                                Command="{x:Bind OpenFolderCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                CornerRadius="10"
+                                                Style="{StaticResource MenuButtonStyle}"
+                                                Visibility="{x:Bind tools:BindUtils.BoolToVisibilityConverter(CanOpenInExplorer), Mode=OneWay}">
+                                                <FontIcon
+                                                    FontSize="18"
+                                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                    helper:IconGlyph.IconKind="SourceLocal" />
+                                                <ToolTipService.ToolTip>
+                                                    <ToolTip x:Uid="OpenFolderToolTip" />
+                                                </ToolTipService.ToolTip>
+                                            </Button>
+                                            <Border
+                                                Width="40"
+                                                Height="40"
+                                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                CornerRadius="10"
+                                                Visibility="{x:Bind tools:BindUtils.BoolToVisibilityReConverter(CanOpenInExplorer), Mode=OneWay}">
+                                                <FontIcon
+                                                    FontSize="18"
+                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                    helper:IconGlyph.IconKind="Import" />
+                                            </Border>
+
+                                            <StackPanel
+                                                Grid.Column="1"
+                                                VerticalAlignment="Center">
+                                                <TextBlock
+                                                    FontSize="14"
+                                                    FontWeight="SemiBold"
+                                                    Text="{x:Bind Name}"
+                                                    TextTrimming="CharacterEllipsis" />
+                                                <TextBlock
+                                                    Margin="0,2,0,0"
+                                                    FontSize="12"
+                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                    Text="{x:Bind Path}"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    Visibility="{x:Bind tools:BindUtils.StringToVisibilityConverter(Path), Mode=OneWay}" />
+                                            </StackPanel>
+
+                                            <StackPanel
+                                                Grid.Column="2"
+                                                VerticalAlignment="Center"
+                                                Orientation="Horizontal"
+                                                Spacing="4">
+                                                <StackPanel
+                                                    Margin="0,0,6,0"
+                                                    VerticalAlignment="Center"
+                                                    Orientation="Horizontal">
+                                                    <TextBlock
+                                                        FontSize="12"
+                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                        Text="{x:Bind SongCount, Mode=OneWay}" />
+                                                    <TextBlock
+                                                        x:Uid="FolderNumberOfSongs"
+                                                        Margin="3,0,0,0"
+                                                        FontSize="12"
+                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                </StackPanel>
+                                                <Button
+                                                    Command="{x:Bind RescanFolderCommand}"
+                                                    CommandParameter="{x:Bind}"
+                                                    Style="{StaticResource LibraryCardActionButtonStyle}">
+                                                    <FontIcon FontSize="16" helper:IconGlyph.IconKind="Import" />
+                                                    <ToolTipService.ToolTip>
+                                                        <ToolTip x:Uid="RescanFolderToolTip" />
+                                                    </ToolTipService.ToolTip>
+                                                </Button>
+                                                <Button
+                                                    Command="{x:Bind RemoveFolderCommand}"
+                                                    CommandParameter="{x:Bind}"
+                                                    Style="{StaticResource LibraryCardActionButtonStyle}">
+                                                    <FontIcon FontSize="16" helper:IconGlyph.IconKind="Delete" />
+                                                    <ToolTipService.ToolTip>
+                                                        <ToolTip x:Uid="RemoveFolderToolTip" />
+                                                    </ToolTipService.ToolTip>
+                                                </Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+
+                            <!--  拖放提示：与列表共存，作为来源区脚注  -->
+                            <Border
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="0,1,0,0"
+                                Padding="14,8"
+                                Visibility="{x:Bind ViewModel.ListVisibility, Mode=OneWay}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon
+                                        FontSize="12"
+                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                        helper:IconGlyph.IconKind="Import" />
+                                    <TextBlock
+                                        x:Uid="AddFolderPageDragHint"
+                                        FontSize="12"
+                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <sub:WebDavSourcesControl />
+                </StackPanel>
+
+                <!--  分区：播放列表  -->
+                <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <StackPanel VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                            <TextBlock x:Uid="PlayLists" Style="{StaticResource LibrarySectionTitleStyle}" />
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontSize="12"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="{x:Bind PlayListViewModel.AppViewModel.AllPlayList.Count, Mode=OneWay}" />
+                        </StackPanel>
+                        <Button
+                            Grid.Column="1"
+                            Padding="12,7"
+                            VerticalAlignment="Center"
+                            Click="AddPlayList_Click"
+                            Style="{StaticResource AccentButtonStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon FontSize="14" helper:IconGlyph.IconKind="Add" />
+                                <TextBlock x:Uid="AddPlayList" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <!--  内置列表：最爱（与歌单卡片同规格，排在自建列表之前）  -->
+                    <Button Click="FavouriteEntry_Click" Style="{StaticResource LibraryTileButtonStyle}">
+                        <Grid
+                            Width="170"
+                            Height="200"
+                            Margin="0"
+                            RowDefinitions="Auto,Auto">
+                            <Border
+                                Grid.Row="0"
+                                Width="158"
+                                Height="158"
+                                Margin="0,6,0,2"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Top"
+                                Background="{ThemeResource SolidBackgroundFillColorSecondaryBrush}"
+                                CornerRadius="10"
+                                Padding="0">
+                                <FontIcon
+                                    FontSize="50"
+                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                    helper:IconGlyph.IconKind="Heart" />
+                            </Border>
+                            <Grid
+                                Grid.Row="1"
+                                Width="160"
+                                Margin="0,6,0,6"
+                                HorizontalAlignment="Center">
+                                <TextBlock
+                                    x:Uid="FavouriteTab"
+                                    VerticalAlignment="Center"
+                                    FontWeight="SemiBold"
+                                    MaxLines="1"
+                                    TextAlignment="Left"
+                                    TextTrimming="CharacterEllipsis" />
+                            </Grid>
+                        </Grid>
+                    </Button>
+
+                    <GridView
+                        Padding="0"
+                        IsItemClickEnabled="True"
+                        ItemClick="PlayListGridView_ItemClick"
+                        ItemsSource="{x:Bind PlayListViewModel.AppViewModel.AllPlayList, Mode=OneWay}"
+                        SelectionMode="None">
+                        <GridView.ItemTemplate>
+                            <DataTemplate x:DataType="model:PlayList">
+                                <controls:PlayListGridCardControl PlayList="{x:Bind}" />
+                            </DataTemplate>
+                        </GridView.ItemTemplate>
+                    </GridView>
+
+                    <!--  空态：提示创建第一个播放列表（新建入口在分区标题右侧）  -->
+                    <Border
+                        Padding="14,12"
+                        Style="{StaticResource LibraryCardStyle}"
+                        Visibility="{x:Bind tools:BindUtils.EmptyCollectionVisibility(PlayListViewModel.AppViewModel.AllPlayList.Count), Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Border
+                                Width="44"
+                                Height="44"
+                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                CornerRadius="12">
+                                <FontIcon
+                                    FontSize="20"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    helper:IconGlyph.IconKind="Music" />
+                            </Border>
+                            <TextBlock
+                                x:Uid="PlayListPageEmptyTitle"
+                                VerticalAlignment="Center"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!--  拖放反馈层（置于最上层，不拦截拖放事件）  -->
+        <Grid
+            x:Name="DropOverlay"
+            Margin="12"
+            IsHitTestVisible="False"
+            Visibility="Collapsed">
+            <Border
+                Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                CornerRadius="12"
+                Opacity="0.35" />
+            <Rectangle
+                Margin="2"
+                RadiusX="10"
+                RadiusY="10"
+                Stroke="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                StrokeDashArray="4,4"
+                StrokeThickness="2" />
+            <StackPanel
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Orientation="Horizontal"
+                Spacing="8">
+                <FontIcon
+                    FontSize="16"
+                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                    helper:IconGlyph.IconKind="SourceLocal" />
+                <TextBlock
+                    x:Uid="AddFolderPageDropOverlayText"
+                    FontSize="16"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Page>

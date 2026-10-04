@@ -10,16 +10,21 @@ namespace WinUIMusicPlayer.Helper
     {
         private MicaController _micaController;
         private SystemBackdropConfiguration _backdropConfiguration;
-        private Microsoft.UI.Dispatching.DispatcherQueue _dispatcherQueue;
 
         // 保存 window 对象引用
         private ICompositionSupportsSystemBackdrop _currentTarget;
         private bool _isConnected = false;
         private Window _window;
         // Mica效果属性
-        public MicaKind MicaKind { get; set; } = MicaKind.Base;
+        // Base 比 BaseAlt 更浓郁（BaseAlt 是给侧栏等次级表面用的轻量变体，壁纸透得更多）。
+        public MicaKind MicaKind { get; set; } = MicaKind.BaseAlt;
         public Color TintColor { get; set; } = Color.FromArgb(255, 32, 32, 32);
-        public float TintOpacity { get; set; } = 1.0f;
+        // Mica 的标准通透感来自 TintOpacity < 1.0；Windows 默认值为 0.8。
+        // 值越大着色越浓；需要更浓郁就往 1.0 调。注意：Mica 本身仍会掺入壁纸，
+        // 想要纯实心自定义色请用 Acrylic（CustomAcrylicStyle）。
+        public float TintOpacity { get; set; } = 0.1f;
+        // Mica 不支持/未激活时回退的纯色，避免回退到透明而显得"淡"。
+        public Color FallbackColor { get; set; } = Color.FromArgb(255, 32, 32, 32);
         public bool IsInputActive = false;
 
         public CustomMicaSystemBackdrop(Window window = null)
@@ -32,8 +37,6 @@ namespace WinUIMusicPlayer.Helper
             _currentTarget = connectedTarget;
             _isConnected = true;
 
-            // 获取当前线程的 DispatcherQueue
-            _dispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
             _backdropConfiguration = new SystemBackdropConfiguration();
 
             // 根据应用当前主题设置背景配置
@@ -50,7 +53,7 @@ namespace WinUIMusicPlayer.Helper
             // 创建并初始化云母控制器
             _micaController = new MicaController();
 
-            // 设置云母效果属性
+            // 设置云母效果属性（在激活目标前同步应用，避免异步时序导致属性未生效）
             SetMicaProperties();
 
             // 激活云母效果
@@ -134,33 +137,25 @@ namespace WinUIMusicPlayer.Helper
             UpdateUiColor(element.ActualTheme);
         }
 
-        // 设置云母效果的属性
+        // 设置云母效果的属性（调用方均在 UI 线程，故直接同步应用）
         private void SetMicaProperties()
         {
-            if (_micaController is null || _dispatcherQueue is null || !_isConnected)
+            if (_micaController is null || !_isConnected)
             {
-                // 记录日志，帮助诊断问题
-                //System.Diagnostics.Debug.WriteLine("SetMicaProperties被调用，但控制器或调度队列无效");
                 return;
             }
 
-            _dispatcherQueue.TryEnqueue(() =>
+            try
             {
-                try
-                {
-                    // 再次检查，因为在队列执行时可能已经变化
-                    if (_micaController is not null && _isConnected)
-                    {
-                        // 设置云母效果的类型和颜色
-                        _micaController.Kind = MicaKind;
-                        _micaController.TintColor = TintColor;
-                        _micaController.TintOpacity = TintOpacity;
-                    }
-                }
-                catch
-                {
-                }
-            });
+                // 设置云母效果的类型和颜色
+                _micaController.Kind = MicaKind;
+                _micaController.TintColor = TintColor;
+                _micaController.TintOpacity = TintOpacity;
+                _micaController.FallbackColor = FallbackColor;
+            }
+            catch
+            {
+            }
         }
 
         // 提供一个公共方法，用于动态更新云母效果的属性

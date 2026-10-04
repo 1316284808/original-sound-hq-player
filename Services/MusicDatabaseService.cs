@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.WinUI;
+using CommunityToolkit.WinUI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
@@ -44,8 +44,6 @@ namespace WinUIMusicPlayer.Services
         public void AttachSettingsCapture(SettingsSnapshotFactory capture) => _settingsCapture = capture;
         // 播放状态文件同一套互斥（同步读写路径用 Wait() 阻塞进入，临界区仅一次小文件 IO）
         private readonly SemaphoreSlim _playStateIoGate = new(1, 1);
-        // 桌面歌词窗口状态文件仅同步读写，用 lock 即可
-        private readonly object _desktopLyricsStateFileLock = new();
         // 版本记录文件同一套互斥
         private readonly SemaphoreSlim _versionRecordIoGate = new(1, 1);
         private SavePlayState _currentPlayState;
@@ -179,67 +177,6 @@ namespace WinUIMusicPlayer.Services
             catch
             {
                 return Path.Combine(ApplicationData.Current.LocalFolder.Path, "PlayState.json");
-            }
-        }
-
-        private string GetDesktopLyricsStateFilePath()
-        {
-            try
-            {
-                string userProfilePath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                string appFolderPath = Path.Combine(userProfilePath, "OriginalSoundPlayer", "Settings");
-                if (!Directory.Exists(appFolderPath))
-                {
-                    Directory.CreateDirectory(appFolderPath);
-                }
-                return Path.Combine(appFolderPath, "DesktopLyricsState.json");
-            }
-            catch
-            {
-                return Path.Combine(ApplicationData.Current.LocalFolder.Path, "DesktopLyricsState.json");
-            }
-        }
-
-        public SaveDesktopLyricsState LoadDesktopLyricsState()
-        {
-            lock (_desktopLyricsStateFileLock)
-            {
-                string path = GetDesktopLyricsStateFilePath();
-                if (!File.Exists(path))
-                {
-                    return new SaveDesktopLyricsState();
-                }
-                try
-                {
-                    return JsonSerializer.Deserialize(File.ReadAllText(path), DesktopLyricsStateJsonContext.Default.SaveDesktopLyricsState) ?? new SaveDesktopLyricsState();
-                }
-                catch (JsonException ex)
-                {
-                    // 损坏文件留底后按默认值继续，避免之后一次写入把事故固化成永久丢失
-                    _logger.LogError(ex, $"DesktopLyricsState.json 解析失败，隔离损坏文件后按默认值继续: {ex.Message}");
-                    TryPreserveCorruptFile(path);
-                    return new SaveDesktopLyricsState();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, $"LoadDesktopLyricsState 读取桌面歌词窗口状态失败: {ex.Message}");
-                    return new SaveDesktopLyricsState();
-                }
-            }
-        }
-
-        public void SaveDesktopLyricsState(SaveDesktopLyricsState state)
-        {
-            lock (_desktopLyricsStateFileLock)
-            {
-                try
-                {
-                    File.WriteAllText(GetDesktopLyricsStateFilePath(), JsonSerializer.Serialize(state, DesktopLyricsStateJsonContext.Default.SaveDesktopLyricsState));
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, $"SaveDesktopLyricsState 写入桌面歌词窗口状态失败: {ex.Message}");
-                }
             }
         }
 
@@ -1054,7 +991,13 @@ namespace WinUIMusicPlayer.Services
                 AppSettings.BassOutputDeviceId = audio.BassOutputDeviceId;
                 AppSettings.WasapiEndpointId = audio.WasapiEndpointId;
                 AppSettings.BassASIODeviceId = audio.BassASIODeviceId;
-                AppViewModel.DefaultEntryComboBoxTag = settings.DefaultEntry;
+                AppViewModel.DefaultEntryComboBoxTag = settings.DefaultEntry switch
+                {
+                    // 旧版导航 tag 一次性迁移：AddFolder/PlayLists 已并入音乐库，MusicBrowse 即全部歌曲
+                    "AddFolder" or "PlayLists" => "MusicLibrary",
+                    "MusicBrowse" => "AllSongs",
+                    var tag => tag
+                };
                 AppViewModel.DefaultPlayListComboBoxTag = settings.DefaultPlayList;
                 AppViewModel.Latency = audio.Latency;
                 AppViewModel.BackdropType = settings.AppStyle;
@@ -1064,7 +1007,6 @@ namespace WinUIMusicPlayer.Services
                 AppViewModel.IsRunningBackend = settings.IsRunningBackend;
                 AppSettings.AutoHideDesktopLyricsOnPlayingDetail = settings.AutoHideDesktopLyricsOnPlayingDetail;
                 AppSettings.IsDesktopLyricsEnabled = settings.IsDesktopLyricsEnabled;
-                AppSettings.IsDesktopLyricsLocked = settings.IsDesktopLyricsLocked;
                 AppSettings.IsDesktopLyricsKaraokeEnabled = settings.IsDesktopLyricsKaraokeEnabled;
                 AppSettings.DesktopLyricsFontSize = settings.DesktopLyricsFontSize;
                 AppSettings.DesktopLyricsFontFamily = settings.DesktopLyricsFontFamily;
@@ -1162,9 +1104,7 @@ namespace WinUIMusicPlayer.Services
                 AppViewModel.ShowWindowShortcut = settings.ShowWindowShortcut;
                 AppViewModel.ToggleFullScreenShortcut = settings.ToggleFullScreenShortcut;
                 AppViewModel.ToggleDesktopLyricsShortcut = settings.ToggleDesktopLyricsShortcut;
-                AppViewModel.ToggleDesktopLyricsLockShortcut = settings.ToggleDesktopLyricsLockShortcut;
                 AppViewModel.ToggleDesktopLyricsKaraokeShortcut = settings.ToggleDesktopLyricsKaraokeShortcut;
-                AppViewModel.ResetDesktopLyricsShortcut = settings.ResetDesktopLyricsShortcut;
                 AppSettings.EnableGlobalHotKey = settings.EnableGlobalHotKey;
                 AppViewModel.EnableGlobalHotKey = settings.EnableGlobalHotKey;
                 AppSettings.IsTrimOnHideEnabled = settings.IsTrimOnHideEnabled;

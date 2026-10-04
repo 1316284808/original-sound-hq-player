@@ -1,7 +1,7 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <Page
     x:Class="WinUIMusicPlayer.View.StatsPage"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:helper="using:WinUIMusicPlayer.Helper"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:behaviors="using:WinUIMusicPlayer.Behaviors"
     xmlns:charts="using:WinUIMusicPlayer.Controls.Charts"
@@ -43,7 +43,7 @@
             Margin="16,16,16,4"
             IsExpanded="{x:Bind ViewModel.IsCustomRangeSelected, Mode=OneWay}">
             <controls:SettingsExpander.HeaderIcon>
-                <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE9D9;" />
+                <FontIcon helper:IconGlyph.IconKind="Stats" />
             </controls:SettingsExpander.HeaderIcon>
             <controls:SettingsExpander.Header>
                 <TextBlock
@@ -99,7 +99,7 @@
                                 Opacity="0.8"
                                 Orientation="Horizontal"
                                 Spacing="8">
-                                <FontIcon FontSize="14" Glyph="&#xE916;" />
+                                <FontIcon FontSize="14" helper:IconGlyph.IconKind="Clock" />
                                 <TextBlock x:Uid="StatsTotalDuration" Style="{ThemeResource CaptionTextBlockStyle}" />
                             </StackPanel>
                             <StackPanel
@@ -124,7 +124,7 @@
                                 Opacity="0.8"
                                 Orientation="Horizontal"
                                 Spacing="8">
-                                <FontIcon FontSize="14" Glyph="&#xE8D6;" />
+                                <FontIcon FontSize="14" helper:IconGlyph.IconKind="NowPlaying" />
                                 <TextBlock x:Uid="StatsTracksPlayed" Style="{ThemeResource CaptionTextBlockStyle}" />
                             </StackPanel>
                             <TextBlock
@@ -141,7 +141,7 @@
                                 Opacity="0.8"
                                 Orientation="Horizontal"
                                 Spacing="8">
-                                <FontIcon FontSize="14" Glyph="&#xE787;" />
+                                <FontIcon FontSize="14" helper:IconGlyph.IconKind="Report" />
                                 <TextBlock x:Uid="StatsActiveDays" Style="{ThemeResource CaptionTextBlockStyle}" />
                             </StackPanel>
                             <TextBlock
@@ -362,7 +362,7 @@
                                                         Canvas.ZIndex="0"
                                                         FontSize="15"
                                                         Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                                                        Glyph="&#xE77B;" />
+                                                        helper:IconGlyph.IconKind="ArtistFilled" />
                                                 </Grid>
                                             </Button>
                                             <TextBlock
@@ -428,7 +428,7 @@
                                                         Canvas.ZIndex="0"
                                                         FontSize="15"
                                                         Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                                                        Glyph="&#xEC4A;" />
+                                                        helper:IconGlyph.IconKind="Chart" />
                                                 </Grid>
                                             </Button>
                                             <TextBlock
@@ -496,7 +496,7 @@
                                                         Canvas.ZIndex="0"
                                                         FontSize="16"
                                                         Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                                                        Glyph="&#xE8D6;" />
+                                                        helper:IconGlyph.IconKind="NowPlaying" />
                                                 </Grid>
                                             </Button>
                                             <StackPanel
@@ -570,7 +570,7 @@
                                                         Canvas.ZIndex="0"
                                                         FontSize="16"
                                                         Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                                                        Glyph="&#xE8D6;" />
+                                                        helper:IconGlyph.IconKind="NowPlaying" />
                                                 </Grid>
                                             </Button>
                                             <StackPanel

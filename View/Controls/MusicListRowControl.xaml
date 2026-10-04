@@ -2,13 +2,14 @@
 <UserControl
     x:Class="WinUIMusicPlayer.View.Controls.MusicListRowControl"
     xmlns:tools="using:WinUIMusicPlayer.Utils"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:helper="using:WinUIMusicPlayer.Helper"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:behaviors="using:WinUIMusicPlayer.Behaviors"
     xmlns:dev="using:DevWinUI"
     xmlns:interactivity="using:Microsoft.Xaml.Interactivity"
     Unloaded="Row_Unloaded">
-    <Grid MinHeight="50" Opacity="{x:Bind tools:BindUtils.MusicRowOpacity(Music.IsPlayable), Mode=OneWay}">
+  
+        <Grid MinHeight="50" Height="auto" Opacity="{x:Bind tools:BindUtils.MusicRowOpacity(Music.IsPlayable), Mode=OneWay}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
@@ -19,9 +20,6 @@
             <ColumnDefinition Width="{x:Bind TrackColumnWidth(ShowTrackNumbers), Mode=OneWay}" />
             <ColumnDefinition Width="0.5*" />
             <ColumnDefinition Width="70" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="50" />
-            <ColumnDefinition Width="32" />
         </Grid.ColumnDefinitions>
         <Button
             x:Name="CoverThumbnail"
@@ -54,7 +52,7 @@
                         Canvas.ZIndex="0"
                         FontSize="15"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Glyph="&#xE93C;" />
+                        helper:IconGlyph.IconKind="Music" />
                 </Grid>
             </Grid>
         </Button>
@@ -141,7 +139,7 @@
             Text="{x:Bind Music.TrackNumber, Mode=OneWay}" />
         <Border
             Grid.Column="7"
-            Padding="4,0,4,1"
+            Padding="4,2"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
             Background="#F7C8AC"
@@ -160,31 +158,6 @@
             Margin="5"
             VerticalAlignment="Center"
             Text="{x:Bind tools:BindUtils.TimeSpanToTextConverter(Music.Duration), Mode=OneWay}" />
-        <Button
-            Grid.Column="9"
-            Margin="5"
-            VerticalAlignment="Center"
-            Background="Transparent"
-            BorderBrush="Transparent"
-            BorderThickness="0"
-            Command="{x:Bind Music.AddMusicToCurrentPlayListCommand, Mode=OneWay}"
-            CommandParameter="{x:Bind Music, Mode=OneWay}">
-            <FontIcon
-                Margin="0,2,0,0"
-                VerticalAlignment="Center"
-                Glyph="&#xE710;" />
-        </Button>
-        <FontIcon
-            x:Name="IsExistOnDeviceIcon"
-            Grid.Column="10"
-            FontSize="14"
-            Glyph="{x:Bind tools:BindUtils.IsExistOnDeviceGlyphConverter(Music.IsExistOnDevice), Mode=OneWay}" />
-        <FontIcon
-            Grid.Column="11"
-            FontSize="14"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-            Glyph="{x:Bind tools:BindUtils.MusicSourceGlyph(Music.IsRemote, Music.IsRemoteOffline, Music.IsRemoteCached), Mode=OneWay}"
-            AutomationProperties.Name="{x:Bind tools:BindUtils.MusicSourceLabel(Music.IsRemote, Music.IsRemoteCached), Mode=OneWay}"
-            ToolTipService.ToolTip="{x:Bind tools:BindUtils.MusicSourceLabel(Music.IsRemote, Music.IsRemoteCached), Mode=OneWay}" />
     </Grid>
+  
 </UserControl>

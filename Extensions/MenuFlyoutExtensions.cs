@@ -11,14 +11,23 @@ namespace WinUIMusicPlayer.Extensions
     {
         public static readonly DependencyProperty PrepareCommandProperty =
             DependencyProperty.RegisterAttached("PrepareCommand", typeof(ICommand), typeof(MenuFlyoutExtensions), new PropertyMetadata(null));
-        public static void SetPrepareCommand(DependencyObject target, ICommand value) => target.SetValue(PrepareCommandProperty, value);
-        public static ICommand GetPrepareCommand(DependencyObject target) => (ICommand)target.GetValue(PrepareCommandProperty);
+        public static void SetPrepareCommand(DependencyObject target, ICommand value)
+        {
+            // WinUI 3 在 Style 的 Setter.Value 内联 MenuFlyout 上对附加属性做 x:Bind 时，
+            // 个别 ListViewItem 容器（虚拟化新项/回收项）会以 null 作为 target 调用本方法，
+            // 此处做空值防护，避免触发 NullReferenceException 导致整个列表崩溃。
+            target?.SetValue(PrepareCommandProperty, value);
+        }
+        public static ICommand GetPrepareCommand(DependencyObject target) => target == null ? null : (ICommand)target.GetValue(PrepareCommandProperty);
 
         public static readonly DependencyProperty ItemsSourceProperty =
             DependencyProperty.RegisterAttached("ItemsSource", typeof(IEnumerable<MenuModel>),
             typeof(MenuFlyoutExtensions), new PropertyMetadata(null, OnItemsSourceChanged));
 
-        public static void SetItemsSource(DependencyObject d, IEnumerable<MenuModel> value) => d.SetValue(ItemsSourceProperty, value);
+        public static void SetItemsSource(DependencyObject d, IEnumerable<MenuModel> value)
+        {
+            d?.SetValue(ItemsSourceProperty, value);
+        }
         public static IEnumerable<MenuModel> GetItemsSource(DependencyObject d) => (IEnumerable<MenuModel>)d.GetValue(ItemsSourceProperty);
 
         private static void OnItemsSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)

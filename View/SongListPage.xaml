@@ -12,10 +12,15 @@
     TabIndex="0"
     mc:Ignorable="d">
     <Page.Resources>
+        <!--  歌曲行容器与其它歌曲列表共用 App.xaml 的 MusicRowListViewItemStyle：
+              行高、圆角、选中/悬浮底色统一走系统画刷，这里只保留列表右侧留白与右键菜单。  -->
         <Style
             x:Key="ListViewItemStyle"
-            BasedOn="{StaticResource DefaultListViewItemStyle}"
+            BasedOn="{StaticResource MusicRowListViewItemStyle}"
             TargetType="ListViewItem">
+            <Setter Property="Margin" Value="0,0,15,0" />
+            <!--  右键菜单：菜单项由 MenuFlyoutExtensions 在 Opening 时按 ViewModel.MenuOptions 重建
+                  （先执行 PrepareMenuCommand 刷新可用态与「添加到播放列表」子项），所以必须挂在容器上  -->
             <Setter Property="ContextFlyout">
                 <Setter.Value>
                     <MenuFlyout extensions:MenuFlyoutExtensions.PrepareCommand="{x:Bind ViewModel.PrepareMenuCommand}" extensions:MenuFlyoutExtensions.ItemsSource="{x:Bind ViewModel.MenuOptions, Mode=OneWay}" />
@@ -34,7 +39,10 @@
             SelectionMode="Extended">
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="model:Music">
-                    <controls:MusicListRowControl Music="{x:Bind Mode=OneWay}" ArtistInvoked="MusicRow_ArtistInvoked" AlbumInvoked="MusicRow_AlbumInvoked" />
+                    <controls:MusicListRowControl
+                        AlbumInvoked="MusicRow_AlbumInvoked"
+                        ArtistInvoked="MusicRow_ArtistInvoked"
+                        Music="{x:Bind Mode=OneWay}" />
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>

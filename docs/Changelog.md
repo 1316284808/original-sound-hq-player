@@ -2,6 +2,231 @@
 
 新条目加在最上方。
 
+## 2026-10-04 任务栏歌词：去掉系统阴影/圆角/细边框，按钮与尺寸微调
+
+- `Helper/WindowHelper.cs`：新增 `RemoveWindowDecoration(hwnd)`，经 `DwmSetWindowAttribute` 关闭非客户区渲染（去掉 DWM 系统投影）、设 `DWMWA_WINDOW_CORNER_PREFERENCE=Donotround`、`DWMWA_BORDER_COLOR=None`，去除 Win11 默认圆角与 1px 细边框。
+- `DesktopLyrics/DesktopLyricsWindow.xaml.cs`：`ApplyOverlayStyle()` 在 GWL_STYLE/`SetBorderAndTitleBar` 变更后调用 `RemoveWindowDecoration`（此前无边框窗仍在轮廓外合成柔和阴影，仅靠 XAML 去不掉）；窗口固定尺寸由 560 高随任务栏改为 **400×60**（`FixedWidth`/新增 `BarHeight`，底边对齐任务栏底部），移除 `MinBarHeight/MaxBarHeight/FallbackHeight`。
+- `DesktopLyrics/DesktopLyricsWindow.xaml`：移除 `RootGrid` 的 `BorderBrush="Black" BorderThickness="1"`（此前那圈"最外层边框"是 XAML 自己画的）；新增 `Button` 样式 `Width/Height=20`、`Margin=2`、`FontSize=10`、`Padding=0`，4 个 `FontIcon` 字号 14→10；歌词 `ContentPresenter` `MinWidth=300` 保留。
+- 验证：未实机确认（需确认轮廓阴影/圆角消失、透明背景正常、点击穿透与置顶不受影响）。
+
+## 2026-10-04 桌面歌词改造为「任务栏歌词」条带
+
+- 定位：不再浮动，打开即贴靠主任务栏（高度=任务栏高度、固定宽度 560、贴任务栏左侧 +8px）；仅横向任务栏贴靠，否则回退主屏工作区底部。`DesktopLyrics/TaskbarInfo.cs` 新增 `TaskbarInfoProvider.GetPrimary()`（`FindWindow("Shell_TrayWnd")` + `GetWindowRect` + `GetDpiForWindow` + `SHAppBarMessage(ABM_GETSTATE)` 自动隐藏判定），`Helper/WindowHelper.cs` 补 `FindWindow`/`GetWindowRect`/`RECT`/`GetDpiForWindow`/`SHAppBarMessage`/`MonitorFromWindow` 等原语。750ms `DispatcherQueueTimer` 周期复述顶（`SetWindowPos(HWND_TOPMOST, NOMOVE|NOSIZE|NOACTIVATE|NOOWNERZORDER)`）+ 任务栏矩形/HWND 变化才重新贴靠 + 自动隐藏收起时同步隐藏、弹出时 `LyricsSyncRequestBus.Request()` 重拉。参考实现：MusicBar（MIT，本地 `C:\Users\fly\Downloads\MusicBar-main`）。
+- 布局：根 `Grid` 改为两列（歌词区 + 右侧按钮区）。新增 4 个控制按钮：上一曲/播放暂停/下一曲/关闭，绑定 `PlaybackCommands`（自带 `CanPlay`/`CanSwitch` 守卫，可用态自动同步）；图标复用 `BindUtils.PlayStatusToGlyphConverter` + `IconKind.Previous/Next` + 关闭字形；补 `AutomationProperties.Name`（新增资源键 `TaskbarLyricsPrevious`/`TaskbarLyricsClose`，7 语言）。
+- 删除：窗口 `Pointer*` 拖动逻辑、`ApplyLock`/`ConfigureWindow`/`ApplyDefaultBounds`/`OnViewModelPropertyChanged` 的 `IsLocked` 分支、`_originalWindowStyle` 边界缓存、`OnAppWindowChanged` 写回边界、`OnWindowClosed` 的 `PersistBounds`；`DesktopLyricsViewModel` 的 `IsLocked`/`BoundsState`/`PersistBounds`/`EnsureBoundsLoaded`；`State/DesktopLyricsState.IsLocked`；`AppSettings`/`SaveSettings`/`SettingsSnapshotFactory` 的 `IsDesktopLyricsLocked`；`Model/SaveDesktopLyricsState.cs` + `Helper/DesktopLyricsStateJsonContext.cs`（删除）+ `MusicDatabaseService.Load/SaveDesktopLyricsState`（删除，连带移除状态文件锁与路径方法）；托盘「锁定」「重置边界」两项及 `TrayViewModel` 对应命令；`HotKeyService` 的 `ToggleDesktopLyricsLock`/`ResetDesktopLyrics` 注册与 `HotKeyHelper.ShortcutId`/`HotKeyState`/`AppViewModel.Settings`/`ShortcutsSettingsControl.xaml` 中对应项；`DesktopLyricsManager.ResetWindowBounds`。
+- **未删除（易误删）**：主窗口的 `AppViewModel.ResetWindowBoundsCommand` → `SettingsActions.ResetWindowBounds`（→ `CenterOnScreen`）与 `GeneralSettingsControl.xaml` 的 `ResetWindowBounds`、resw `ResetWindowBounds.Content`，属主窗口功能，与歌词无关。
+- 用户可见文案：「桌面歌词」分区标题/托盘子菜单标题统一经 `IconDesktopLyrics.Text` 改为「任务栏歌词」（7 语言）。
+- 验证：构建通过（0 错误）。人工实测项：贴靠（高度/宽度/左偏移/跟随任务栏高度/分辨率变化）、z 序（切应用/最大化/开始菜单后仍在任务栏之上且不抢焦点）、按钮（4 个点击生效、播放图标随态切换、无曲目禁用、移开恢复穿透）、穿透（光标不在按钮上时任务栏图标/开始菜单/托盘可点）、自动隐藏同步、高 DPI 125%/150% 无偏移。
+
+## 2026-10-04 WebDAV 两个对话框补上圆角
+
+- `View/SubView/WebDavConnectionDialog.xaml`（添加/编辑来源）、`View/SubView/WebDavBrowserDialog.xaml`（浏览目录）：根元素补 `CornerRadius="10"`，与项目内其它对话框（`AddPlayListDialog`、`EqualizerDialog`、`SettingsDialog`、`ProgressDialog`、`ConvolutionCurveDialog`、`UpdateHistoryDialog`）一致。
+- 原因：这两个对话框是后加的，未沿用其它对话框的 `CornerRadius`，走了 WinUI 默认（`OverlayCornerRadius`=8 且模板实际未生效于该内容结构），看起来就是直角。
+
+## 2026-10-04 修复：全部歌曲页右键菜单丢失
+
+- `View/SongListPage.xaml`：`ListViewItemStyle` 补回 `ContextFlyout`（`MenuFlyout` + `extensions:MenuFlyoutExtensions.PrepareCommand="{x:Bind ViewModel.PrepareMenuCommand}"` / `ItemsSource="{x:Bind ViewModel.MenuOptions, Mode=OneWay}"`），并重新加回 `xmlns:extensions`。
+- 原因：此前把容器样式从 `DefaultListViewItemStyle` 换成 `MusicRowListViewItemStyle` 时，只保留了 `Margin`，`ContextFlyout` 的 Setter 连同 `xmlns:extensions` 一起被删掉，右键只剩 `MusicListView_RightTapped` 里的选中逻辑，菜单无从触发。ViewModel 侧（`SongListViewModel.MenuOptions` / `PrepareMenuCommand`）一直是好的，属纯 XAML 接线丢失。
+
+## 2026-10-03 浏览页搜索框：亮色主题下输入光标不可见的规避
+
+- `View/MusicBrowsePage/MusicBrowsePage.xaml`：`SearchAutoSuggestBox` 的背景由 `Transparent` 改为 `{ThemeResource TextControlBackground}`，并在 `AutoSuggestBox.Resources` 里用 `ResourceDictionary.ThemeDictionaries` 按主题给出「近乎透明」的底色：亮色 `#0AFFFFFF`、暗色 `#0A000000`（Alpha=0x0A≈4%，视觉上等同透明，但 Alpha≠0）；四个 `TextControlBackground*` 都要给，因为 PointerOver/Focused 视觉状态会重新赋值。边框画刷仍为全透明。
+- 原因：WinUI 已知 bug [microsoft-ui-xaml#9005](https://github.com/microsoft/microsoft-ui-xaml/issues/9005)（已 closed as not planned）——TextBox/RichEditBox 背景 Alpha=0 时，输入光标（caret）按背景反色计算退化成白色，亮色主题下与背景同色而看不见；暗色主题下正好相反所以能看见闪烁。
+- 验证：未实机确认，需确认亮色下光标变深、暗色下仍为浅色，且底色加 4% 白/黑后不可察觉；若光标仍是白色，把 Alpha 再调大（如 `#1A`）即可。
+
+## 2026-10-03 浏览页搜索按钮：展开/折叠时高度不再变化
+
+- `View/MusicBrowsePage/MusicBrowsePage.xaml`：搜索按钮加 `Height="35"`（与同行 `MenuButtonStyle` 按钮的 `MinHeight` 一致）、`Padding="8,0"`、`VerticalContentAlignment="Center"`；`SearchAutoSuggestBox` 加 `MinHeight="0"`，并在其 `Resources` 里把 `TextControlThemeMinHeight` 压到 30（内嵌 `TextBox` 的默认最小高度来自该主题资源，不压下来即使外层设了 `Height="30"` 仍会被顶到 32 左右）。
+- 原因：按钮此前没有固定高度，折叠时高度由搜索图标（约 19px）+ 默认内边距决定，展开后由输入框决定，两者不等于是出现高度抖动；宽度变化是预期内的（`Width` 绑定 `IsSearchExpanded`）。
+
+## 2026-10-03 浏览页搜索框：常态/悬浮/聚焦都保持透明背景
+
+- `View/MusicBrowsePage/MusicBrowsePage.xaml`：`SearchAutoSuggestBox` 在 `AutoSuggestBox.Resources` 里本地覆盖 `TextControlBackground`、`TextControlBackgroundPointerOver`、`TextControlBackgroundFocused`、`TextControlBackgroundDisabled` 以及四个 `TextControlBorderBrush*` 为 `Transparent`。
+- 原因：`AutoSuggestBox` 的背景主要由内嵌 `TextBox` 绘制，而默认模板在 PointerOver/Focused 等视觉状态里会用 `TextControlBackground*` 重新赋值；视觉状态的优先级高于样式 Setter 和元素本地值，所以只写 `Background="Transparent"`（原本就有）在聚焦时会被覆盖回来。
+- 影响范围：只作用于该控件实例及其模板子树（资源沿视觉链向上查找），不影响页面其它 `TextBox`/`AutoSuggestBox`。
+
+## 2026-10-03 侧边栏汉堡按钮：改为自定义模板，图标随开合切换 InHome / BackHome
+
+- `View/MainPage.xaml`：`NavigationView` 新增 `PaneToggleButtonStyle`，自包含 `Style`（无 `BasedOn`——`NavigationViewPaneToggleButtonStyle` 这个键不存在，写 `BasedOn` 会在加载时抛 `XamlParseException: Cannot find a Resource with the Name/Key ...`），用自写 `ControlTemplate` 渲染单个 `FontIcon`（`Glyph` 绑定 `ViewModel.NavButtonGlyph`，字体 `Segoe Fluent Icons`，16 号，含 Normal/PointerOver/Pressed/Disabled 四个视觉状态）；样式同时显式给出 `Height=40`、`Padding/BorderThickness=0`、`Foreground=NavigationViewItemForeground`、`CornerRadius`、`UseSystemFocusVisuals`，不依赖基样式默认值。
+- `ViewModel/Pages/MainViewModel.cs`：新增 `NavButtonGlyph`（= `IconService.GetIconChar(NavButtonIcon)`），与 `NavButtonIcon` 一起在 `AreOtherButtonsVisible` 变化时通知；字形仍以 `IconService` 为唯一真源（展开 `InHome` = `\uE10F`，折叠 `BackHome` = `\uE72B`）。
+- `View/MainPage.xaml.cs`：图标切换的触发源由 `PaneOpened`/`PaneClosed` 事件改为 `NavigationView.IsPaneOpen` 的属性变化回调（`RegisterPropertyChangedCallback`，令牌在 `MainPage_Unloaded` 注销）。`PaneOpened`/`PaneClosed` 是 `SplitView` 开合动画结束后才转发的，用它驱动会让图标在动画结束时才变（肉眼可见滞后）；`IsPaneOpen` 在点击瞬间翻转，且同样覆盖选中项后自动收起、轻触消失等入口。
+- `View/MainPage.xaml.cs`：删除 `UpdatePaneToggleIcon()` 及其两处调用——原实现按名字 `PaneToggleButton` 在视觉树里找按钮并替换内部 `FontIcon`，而 WinUI 模板里该按钮名为 `TogglePaneButton` 且内容是 `TextBlock`（`PaneTitleTextBlock`），查找必然落空、图标从未生效；现在由模板声明式完成。`CollapsePaneCloseButton()` 保留不动（按 `PaneCloseButton` 查找，实际模板名为 `NavigationViewCloseButton`，同为无效调用，未在本改动范围内处理）。
+- 验证：模板内无法使用 `x:Bind`（`ControlTemplate` 无 `x:DataType`），`Glyph` 走继承 `DataContext`（页面 → `ViewModel`）的传统 `Binding`；宽度仍来自 `NavigationView` 模板上的 `MinWidth`（绑定 `TemplateSettings.SmallerPaneToggleButtonWidth`），高度由本样式给出 40。未做设备上实机确认，需确认两个字形在 Segoe Fluent Icons 中存在（缺失会显示空白/豆腐块）。
+
+## 2026-10-03 顶栏新增亮/暗主题切换按钮
+
+- `View/MainPage.xaml`：`AppTitleBar` 右侧 `TopRightButtons` 中第一个按钮 `ThemeToggleTitleBarButton`（`TitleBarButtonStyle`），命令绑定 `AppViewModel.ToggleThemeCommand`，图标为两个 `FontIcon`（`helper:IconGlyph.IconKind="LightMode"/"DarkMode"`）按 `IsDarkMode` 切换 Opacity（与最大化按钮同样的做法），显示的是点击后进入的模式。
+- `Helper/IconKind.cs` / `Helper/IconService.cs`：新增 `LightMode`（`\uF08C`）、`DarkMode`（`\uF0CE`）。
+- `Services/SettingsActions.cs`：新增 `OnToggleTheme`（按当前生效的 `IsDarkMode` 在 `"Light"`/`"Dark"` 间切换 `ThemeType`）；`ViewModel/AppViewModel.Settings.cs` 暴露 `ToggleThemeCommand`。应用与保存仍走既有 `SettingsCoordinator` 的 `ThemeType` 分支；跟随系统（`Default`）时按系统当前深浅决定目标。
+- `Utils/BindUtils.cs` 与 `Strings/*/Resources.resw`：新增提示文案转换 `ThemeToggleTextConverter` 与资源键 `ThemeToggleToLight` / `ThemeToggleToDark`（7 种语言）。
+
+## 2026-10-03 按钮悬浮/按下底色统一为默认 Button 的取值
+
+- `Style/BtnStyle.xaml`：`MenuButtonStyle`、`PlayButtonStyle` 的 PointerOver / Pressed 底色由 `AppBarButtonBackgroundPointerOver` / `Pressed`（= `SubtleFillColorSecondary/Tertiary`，暗色 6%/4% 白、浅色 3.5%/2.4% 黑，极淡）改为 `ButtonBackgroundPointerOver` / `Pressed`（= `ControlFillColorSecondary/Tertiary`，暗色 8%/3% 白、浅色 50%/30% 浅灰），即无样式按钮（如返回按钮）的取值；常态底色 `AppBarButtonBackground`（透明）与前景色不变。
+- `Style/BtnStyle.xaml`：`CircularButtonStyle` 的悬浮底色由 `SubtleFillColorTertiaryBrush`（比常态还淡）改为 `ButtonBackgroundPointerOver`，按下改为 `ButtonBackgroundPressed`。
+- 未改动：`SimpleHoverButtonStyle` / `PlayHoverButtonStyle`（封面上的黑色叠加 + 箭头，另有用途）、`NoHoverButtonStyle`（刻意无悬浮）、以及使用 WinUI `SubtleButtonStyle` 的按钮（如 `App.xaml` 的 `LibraryCardActionButtonStyle`）——后者悬浮仍为 `SubtleFillColor*`，要一起统一需改它们的样式或全局覆盖 `SubtleFillColor*Brush`。
+
+## 2026-10-03 歌曲行高统一：三处详情/最爱列表与歌曲列表页一致
+
+- `App.xaml`：新增共享样式 `MusicRowListViewItemStyle`（`BasedOn` 默认样式），集中定义 `CornerRadius=8`、横向/纵向 `Stretch`、`Padding="16,5,12,5"` 与重写模板（默认模板未把 CornerRadius 暴露给 `ListViewItemPresenter`，需显式 TemplateBinding 才能圆角化选中/悬停背景）。纵向 5 + `MusicListRowControl` 的 `MinHeight=50` = 60，与 `SongListPage` 行高一致（此前三处用默认 `Padding="16,0,12,0"`，行高只有 50，视觉比歌曲列表页矮 10px）。
+- `View/Controls/MusicGroupDetailControl.xaml`、`View/Controls/PlaylistDetailControl.xaml`、`View/FavouritePlayListPage.xaml`：各自的 `ListViewItemStyle` 改为 `BasedOn="{StaticResource MusicRowListViewItemStyle}"`，只保留各自的右键菜单 `ContextFlyout`，删除三份重复的模板（约 47 行 × 3）。
+- `View/SongListPage.xaml`：列表容器改为 `BasedOn` 同一个共享样式（+ `Margin="0,0,15,0"`），删除内联容器样式里手写的 `#4DFFFFFF`（悬浮）/`#80FFFFFF`（选中）视觉状态——这两项是硬编码白色，浅色主题下几乎不可见，也和其它列表的系统画刷不一致；歌曲行的 `BorderBrush/BorderThickness` 无渲染效果，一并移除。现在四处歌曲列表的悬浮/选中/按下/禁用底色全部来自 `ListViewItemBackground*` / `ListViewItemForeground*` 主题画刷。
+- `App.xaml`：`MusicRowListViewItemStyle` 模板里 `ListViewItemPresenter` 的 `PointerOverBackground` / `SelectedBackground` / `SelectedPointerOverBackground` / `SelectedPressedBackground` 由主题画刷改为固定白色叠加 `#4DFFFFFF`（悬浮，30%）与 `#80FFFFFF`（选中，50%），即 SongListPage 原来的取值；现在四处歌曲列表共用同一套强调色。前景色（`PointerOverForeground` / `SelectedForeground`）与按下态仍走主题画刷。
+- 兼容性：三处详情/最爱列表行高由 50 变为 60，悬浮/选中高亮由系统画刷改为上面的白色叠加，与歌曲列表页原表现一致。注意白色叠加在浅色主题下对比很弱（原 SongListPage 亦如此），要改成随主题变化就把这几个值换回 `ThemeResource` 或改用 `ThemeDictionaries`，改一处即可全局生效。
+
+## 2026-10-03 专辑卡片：改为横版圆角卡片（左封面 + 右侧信息 + 悬浮播放）
+
+- `View/Controls/AlbumGridCardControl.xaml`：卡片由「150 方封面 + 下方专辑名 / 歌手 / 曲目数」改为参考项目 `AlbumControl` 的 280×120 横版卡片（`CornerRadius=8`）；左侧 120×120 封面（`x:Name="CoverBorder"` 保留，供 `AlbumPage` 的 ConnectedAnimation 查找），封面图内缩 10px 装在 100×100 / `CornerRadius=8` 的内层 Border 里，四周露出包边；右侧专辑名（14 SemiBold / 最多 110 宽换行省略 / ToolTip）+「N 首」（沿用既有 `AlbumSongs` 资源键，与歌手卡片一致，不再单独显示歌手名）；播放按钮常驻悬浮在封面正中（30×30 / `CornerRadius=15`）。配色走系统主题画刷：卡片 `CardBackgroundFillColorDefaultBrush` + `CardStrokeColorDefaultBrush`，文字 `TextFillColorPrimaryBrush` / `TextFillColorSecondaryBrush`，封面包边 `SolidBackgroundFillColorSecondaryBrush`，按钮 `SubtleFillColorSecondaryBrush` + `ControlStrokeColorDefaultBrush`。WinUI 无 `Border.Effect`，参考项目的 `DropShadowEffect` 未移植。
+- `View/Controls/AlbumGridCardControl.xaml.cs`：构造注入 `AlbumViewModel`，点击播放按钮调用 `PlayAlbum(Music)`；按钮 `Tapped` 标记 `Handled` 防止冒泡成 GridView 的 `ItemClick` 而同时进入详情。
+- `ViewModel/Pages/AlbumViewModel.cs`：`Play()` 的取歌/排序/播放逻辑抽成 `public Task PlayAlbum(Music album)`（按 `TrackNumber` 排序不变），右键菜单与卡片播放按钮共用。
+
+## 2026-10-03 歌手卡片：改为胶囊布局（左圆封面 + 右侧信息 + 悬停播放）
+
+- `View/Controls/ArtistGridCardControl.xaml`：卡片由「150 圆形封面 + 下方居中歌手名」改为参考项目的 280×120 胶囊（`CornerRadius=60`）；左侧 120×120 圆形封面（`x:Name="CoverBorder"` 保留，供 `ArtistPage` 的 ConnectedAnimation 查找）：封面图内缩 10px 装在 100×100 / `CornerRadius=50` 的内层 Border 里单独裁圆，外圈 10px 黑色包边遮住裁切毛边；右侧歌手名（14 SemiBold / 最多 110 宽换行省略 / ToolTip）+「N 首」（沿用既有 `AlbumSongs` 资源键）；播放按钮常驻悬浮在封面正中（30×30 / `CornerRadius=15` / `#80FFFFFF`）。WinUI 无 `Border.Effect`，参考项目的 `DropShadowEffect` 未移植。
+- `View/Controls/ArtistGridCardControl.xaml`：卡片配色改为本项目统一的系统主题画刷（不再沿用参考项目的固定浅色）——卡片底 `CardBackgroundFillColorDefaultBrush` + 描边 `CardStrokeColorDefaultBrush`（亮色白卡片 / 暗色灰卡片），歌手名 `TextFillColorPrimaryBrush`、曲目数 `TextFillColorSecondaryBrush`，封面外圈 `SolidBackgroundFillColorSecondaryBrush`，悬浮播放按钮 `SubtleFillColorSecondaryBrush` + `ControlStrokeColorDefaultBrush` 描边（并显式 `MinWidth/MinHeight/Padding/Margin=0`，避免全局隐式 Button 样式把 30×30 撑成 40×35），设备角标前景同样改为 `TextFillColorPrimaryBrush`。主题由 `ThemeStyleHelper` 设置窗口根元素 `RequestedTheme`，`ThemeResource` 自动跟随。
+- `View/Controls/ArtistGridCardControl.xaml.cs`：构造注入 `ArtistViewModel`，点击播放按钮调用 `PlayArtist(Music)`；按钮 `Tapped` 标记 `Handled` 防止冒泡成 GridView 的 `ItemClick` 而同时进入详情。
+- `ViewModel/Pages/ArtistViewModel.cs`：`Play()` 的取歌/排序/播放逻辑抽成 `public Task PlayArtist(Music artist)`，右键菜单与卡片播放按钮共用（行为不变：`CanStartPlayback` 守卫、按专辑 `CjkStringComparer` 排序、`IsChangeList: true`）。
+- `Services/LibraryQueries.cs` / `ViewModel/AppViewModel.cs` / `Utils/BindUtils.cs`：新增歌手曲目数链路 `_artistSongCounts` → `GetArtistSongCount` → `ArtistSongsConverter`；计数在 `AddArtistIndexEntry` 内复用已拆分的歌手名累加，不增加额外扫描，同样跟随来源过滤。
+
+## 2026-10-03 底部播放控制栏：MainPage 与播放详情页布局统一
+
+- `View/MainPage.xaml`：底部控制栏按播放详情页 `ControlsStack` 的风格重整——左区保持 60 旋转封面 + 三行歌曲信息（标题 18 Bold / 专辑 12 / 歌手 12，去掉原先固定 16 高度避免截断，`MaxWidth 240`）；中区顺序与尺寸对齐详情页（收藏 18 / 进度数显 `已播放 / 剩余` / 上一首 18 / 播放暂停 32×26 / 下一首 18 / 停止 18）；右区按钮顺序改为 桌面歌词 → 均衡器 → 音量 → 播放模式 → 播放列表，`Margin=5`、图标 `FontSize=18`。旋转封面的 storyboard 目标元素 `AlbumCoverRotateTransform` 保持不变。
+- `View/MainPage.xaml`：`NavigationView` 新增 `OpenPaneLength="216"` / `CompactPaneLength="48"`，收窄过宽的侧边导航项（此前用默认值 320）。
+
+## 2026-10-03 返回路由：歌单详情与「最爱」子页一步回到音乐库页
+
+- `View/MainPage.xaml.cs`：`HandleBackNavigation` 新增 `ReturnToMusicLibraryPage()`（后退栈在每次 `NavigateTo` 后被清空，只能重新导航）；`PlayListPage` 分支改为退出详情后直接回到音乐库页，不再退回本页的歌单浏览网格。
+- `View/PlayListPage.xaml.cs`：`CollapseDetail()`（含返回 ConnectedAnimation）替换为 `LeaveDetailForLibrary()`——详情不再有停留场景，直接清 `CurrentPlayList` / 详情页详情态；随之删除不再使用的 SetExitTransitions。
+- `View/MainPage.xaml.cs`：`NavigateToMusicBrowseSubPage` 记录子页来源 `_browsePageReturnToLibrary`（从音乐库页进入时为真），回来时先让浏览页消费详情态，否则回到音乐库页；`ViewModel/Pages/FavouritePlayListViewModel.cs`：`ReceiveNavigation` 由 `IsBackBtnEnable=false` 改为 `true`（最爱无独立导航项，入口在音乐库页）。
+- `View/MusicBrowsePage/MusicBrowsePage.xaml.cs`：新增只读属性 `IsSubPageInDetailMode`（内容区子页是否处于详情态），供 MainPage 判断返回键由谁消费。
+
+## 2026-10-03 音乐库页：两分区重排 + WebDAV 卡片与添加入口拆分
+
+- `View/MusicLibraryPage.xaml`：页面重排为「音乐来源 / 播放列表」两个分区，去掉页头三个快捷入口按钮（最爱改作播放列表分区内置磁贴，全部歌曲与文件夹浏览分别有侧栏入口与来源行内的打开位置）；来源区标题只保留标题，卡片内各自显示数量。
+- `View/SubView/WebDavSourcesControl.xaml`：WebDAV 改为与本地文件夹同规格的卡片容器（`App.xaml` 的 `LibraryCardStyle` / `LibraryGroupTitleStyle` / `LibraryCardActionButtonStyle`），行项目不再是独立小卡，标题行新增「+」= 新建网络来源（`Add_Click`）。
+- `View/MusicLibraryPage.xaml`：本地文件夹卡片标题行新增「+」= 添加文件夹（绑定 `AddFolderCommand`），移除原「添加来源」DropDownButton 与空态里的重复按钮；删除图标由 `Share` 改为 `Delete`。
+- `View/Controls/PlayListGridCardControl.xaml(.cs)`：新增共用的播放列表网格卡片（封面 + 悬停播放 / 更多菜单：重命名、导出、删除），`MusicLibraryPage` 与 `PlayListPage` 共用，后者的卡片模板与重复处理器随之删除。
+- `App.xaml`：新增共享样式 `LibraryCardStyle` / `LibraryGroupTitleStyle` / `LibraryCardActionButtonStyle`（原本为音乐库页私有）。
+- `Strings/*/Resources.resw`：新增独立资源键 `WebDavAddSource`（7 种语言），用于新建网络来源按钮的名称与提示。
+
+## 2026-10-02 播放详情页：歌曲信息移至底部控制栏并可点击退出
+
+- `View/PlayingDetailPage.xaml`：移除左侧面板下方的歌曲信息区（标题 / 专辑 / 歌手 / 采样率 / HQ 徽章，含 Win2D 动画文本与悬停滚动），左侧面板行定义简化为 `*,6*,50,*`；在底部控制栏左侧（设置按钮前）新增歌曲信息按钮：三行文本（标题 18 Bold / 专辑 12 / 歌手 12，与 MainPage 控制栏一致，MaxWidth 300 自动截断），点击等同标题栏 `CancelPlayingDetailButton`，退出播放详情页返回浏览页。设置 / 歌词偏移 / 均衡器三个按钮移至右侧控制组（播放列表 / 音量 / 播放模式之前）。
+- `View/PlayingDetailPage.xaml.cs`：新增 `MusicInfoButtonPlayingDetail_Click`；清理对已移除元素的引用（Win2D 特效初始化、`AutoScrollHover_*` 处理器、`textScale`）；横竖屏布局同步调整——竖屏左侧面板简化为单列、封面居中，横屏行定义改为 4 行；`ChangeControlsFontSize` 仅保留歌词字号与布局切换。**注意**：播放详情“文本对齐”设置（`EffectivePlayingDetailAlignment`）不再有显示消费者，设置项暂保留。
+- `ViewModel/Pages/PlayingDetailViewModel.cs`：删除无消费者的 `TitleFontSize` / `ArtistAlbumFontSize` / `InfoFontSize` 属性。
+
+## 2026-10-02 右键菜单：修复 ListViewItem 应用样式时空引用崩溃
+
+- `Extensions/MenuFlyoutExtensions.cs`：为 `SetPrepareCommand` / `SetItemsSource` 增加 `target`/`d` 为 null 时的防护。WinUI 3 在 `Style` 的 `Setter.Value` 内联 `MenuFlyout` 上对附加属性（`PrepareCommand`/`ItemsSource`）做 `x:Bind` 时，个别 `ListViewItem` 容器（虚拟化新项 / 回收项）会以 null 作为 `target` 调用这两个 setter，原代码直接 `target.SetValue` 触发 `NullReferenceException` 导致相关列表崩溃。
+
+## 2026-10-02 歌曲列表选中项：高亮背景改为圆角 8
+
+- `View/SongListPage.xaml` / `View/FavouritePlayListPage.xaml` / `View/Controls/PlaylistDetailControl.xaml` / `View/Controls/MusicGroupDetailControl.xaml`：在各自的 `ListViewItemStyle` 中重写 `ControlTemplate`，使用 `ListViewItemPresenter` 并显式 `CornerRadius="{TemplateBinding CornerRadius}"`（配合 `CornerRadius=8`）。WinUI 3 默认模板未将 `CornerRadius` 经 `TemplateBinding` 暴露给 `ListViewItemPresenter`，仅设 `CornerRadius` 属性对选中/悬停背景无效；重写后选中与悬停高亮真正圆角，并完整保留多选勾选框、拖拽/重排、按下/焦点等原生视觉，右键菜单（ContextFlyout）不受影响。
+
+## 2026-10-02 浏览页大标题：动态显示当前路由项文本
+
+- `ViewModel/AppViewModel.cs`：`PageType` 由原自动属性改为通知属性（CommunityToolkit `SetProperty`），新增计算属性 `PageTitle`；按 `PageType`（song/album/artist/folder/favourite，浏览态 `albumBrowse` 等去 `Browse` 后缀）映射到**新建的无后缀独立资源键**（`PageTitleAllSongs`/`PageTitleAlbumList`/`PageTitleArtistList`/`PageTitleFolder`/`PageTitleFavourite`），经 `ToolUtils.GetString` 读取。`GetString` 基于 `ResourceLoader` 仅可靠解析无后缀独立键，侧边栏用的 `.Text` 属性资源名（`AllSongs.Text` 等）直接传入会被原样返回（即显示键名），故改用独立键；该组键已写入 zh-CN/en/de/es/ja/ru/tr 七种语言（值取自对应 `.Text` 翻译）。
+- `View/MusicBrowsePage/MusicBrowsePage.xaml`：大标题 `TextBlock` 由 `x:Uid="AllSongsTitle"`（资源键缺失导致一直空白）改为绑定 `ViewModel.AppViewModel.PageTitle`，随子页切换（全部歌曲/专辑列表/歌手列表/文件夹/最爱）动态更新。
+
+## 2026-10-02 浏览页操作行：改用 Grid 列定义布局（修正 coldef 错误语法）
+
+- `View/MusicBrowsePage/MusicBrowsePage.xaml`：将 `Grid.Row="1"` 操作行由 `Horizontal StackPanel` 改为 `Grid` + `ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto"`；每个控件用 `Grid.Column` 定位——`全部播放(0)/随机播放(1)/搜索按钮(2)/搜索框(3)` 紧贴左侧，第 4 列 `*` 为弹性空列把 `排序(5)/USB(6)/远程来源(7)` 推到最右；逐元素补 `VerticalAlignment="Center"` 避免 Grid 默认 Stretch 撑高。原 `coldef="auto,..."` 非 WinUI 语法已修正。
+
+## 2026-10-02 浏览页顶栏：全部来源下拉并入操作行，Row=0 仅留大标题
+
+- `View/MusicBrowsePage/MusicBrowsePage.xaml`：将 `UsbDeviceCombox`（USB 设备）与远程来源 `ComboBox` 从顶部 `Grid.Row="0"` 右侧移至 `Grid.Row="1"` 操作行，排在排序选择之后；`Grid.Row="0"` 现在**仅保留大标题**（如全部歌曲、音乐库、专辑列表、歌手列表等随导航切换的 `AllSongsTitle`），不再含任何操作控件。`x:Name="UsbDeviceCombox"` 保留，后台无引用，移动不影响功能。
+
+## 2026-10-02 浏览页顶栏：排序选择并入操作行，与播放/搜索同排
+
+- `View/MusicBrowsePage/MusicBrowsePage.xaml`：将 `SortByComboBox`（排序选择）从顶部 `Grid.Row="0"` 右侧移至 `Grid.Row="1"` 操作行，与「全部播放 / 随机播放 / 搜索」同一行。`x:Name="SortByComboBox"` 保留，后台无引用，移动不影响功能。
+
+## 2026-10-02 标题栏：返回按钮与应用标题合并为单按钮（图标 + 名称）
+
+- `View/MainPage.xaml`：将标题栏左侧独立的 `BackButton`（仅返回图标）与 `AppTitle` 文本块合并为同一个 `Button`，内部用横向 `StackPanel`（左 `FontIcon` 返回图标 + 右 `x:Uid="AppTitle"` 应用名）排布；`BackButton_Click`、`IsEnabled`、`ToolTip` 等行为保持不变。进度指示器（`ProgressRing` + 百分比）仍在该按钮之后独立显示。
+
+## 2026-10-02 全局按钮基础样式：隐式 Button 样式统一兜底
+
+- `App.xaml`：`Application.Resources` 新增隐式（无 `x:Key`）`Button` 基础样式，统一 `Margin=5 / MinHeight=35 / MinWidth=40 / FontSize=12 / CornerRadius=8 / Background=Transparent / BorderThickness=0`，对所有未显式指定样式的 `Button` 生效并保留默认模板；具名按钮样式（如 `SimpleHoverButtonStyle`/`PlayButtonStyle`/`MenuButtonStyle` 等）因显式赋值 `Style` 不受影响。注意：会同时作用于内置控件（ComboBox/DatePicker/NumberBox 等）内部的 `Button`。
+
+## 2026-10-02 侧边栏“统计”导航项：补充选中态图标切换
+
+- `Helper/IconKind.cs`：`Stats1` 标注为选中态实心字形（`\ued0d`），`Stats`（`\ued0c`）为未选中态。
+- `View/MainPage.xaml.cs`：`NavIconMap` 的 `Stats` 由 `(Stats, Stats)` 改为 `(Stats, Stats1)`，使统计项点击选中后图标由 `\ued0c` 切换到 `\ued0d`，与其余导航项（Outline/Filled）的选中态切换行为一致。
+
+## 2026-10-02 Mica 背景：默认更浓郁 + 修复属性未生效时序
+
+- `Helper/CustomMicaSystemBackdrop.cs`：默认 `MicaKind` 由 `BaseAlt` 改为 `Base`（BaseAlt 是给侧栏等次级表面用的轻量变体，壁纸透得更多，看起来偏淡）；默认 `TintOpacity` 由 `0.01f` 改为 `0.8f`；新增 `FallbackColor`（Mica 不支持/未激活时回退的纯色，避免回退透明）。`SetMicaProperties` 改为在 `AddSystemBackdropTarget` 之前**同步**应用属性（原实现经 `DispatcherQueue.TryEnqueue` 异步入队、且在激活目标之后才入队，存在属性未落到控制器上的时序风险），并补设 `FallbackColor`。
+- 说明：Mica 本质为掺入桌面壁纸的半透明材质，不会变成纯实心色；若需完全浓郁、可自定义的纯色背景，请改用应用内已有的 `CustomAcrylicStyle`（Acrylic + `TintOpacity=1.0` + `LuminosityOpacity=0`）。
+
+## 2026-10-02 播放详情页控制栏：进度条独立成行、时间数显紧随收藏、移除快进/快退10秒
+
+- `View/PlayingDetailPage.xaml`：进度条（`ProgressSliderPlayingDetail`）拆为独立第一行，移除原两侧 `ElapsedTimeText`/`RemainingTimeText` 文本；第二行播放按钮区移除 `FastBackwardButton` 与 `FastForwardButton`（快退/快进 10 秒），改用 6 列布局（收藏 / 时间数显 / 上一首 / 播放暂停 / 下一首 / 停止）。进度时间数显（`ElapsedTimeText` + `/` + `RemainingTimeText`）以 `StackPanel` 放到收藏按钮后面。
+- 说明：`AppViewModel.FastBackwardButtonCommand` / `FastForwardButtonCommand` 现仅在此页引用，移除按钮后命令变为未被引用（保留定义未删，避免改动范围扩大）；如需彻底清理可一并删除。
+
+## 2026-10-02 标题栏：新增“返回上一页”按钮、移除 AppLogo、修正最小化图标
+
+- `View/MainPage.xaml`：移除左侧 `AppLogo` 图标（`Image Source=".../icon.ico"`）；在同位置新增“返回上一页”按钮（`BackButton`，字符图标 `IconKind.Back`），与 `AppTitle` 合并为始终显示；`IsEnabled` 绑定 `AppViewModel.IsBackBtnEnable`（一级页面禁用=点击无反应，二级页面启用=返回上一页），去掉原先的 `Visibility` 绑定（不再按层级隐藏）。布局对齐参考项目 `TitleBarControl.xaml` 的左侧（返回图标 + 标题）。另将最小化按钮误用的 `VolumeAlt` 图标改为正确的 `Minimize` 字符图标。
+- `View/MainPage.xaml.cs`：新增 `BackButton_Click`，调用既有 `HandleBackNavigation()`（覆盖 PlayListPage 详情收起与 MusicBrowsePage 返回）。
+- `Helper/IconKind.cs` / `Helper/IconService.cs`：新增 `Minimize` 成员并映射字形 `E949`（ChromeMinimize）。
+- 说明：参考项目 `TitleBarControl` 为 WPF（`CustomIcon` + `Style.Triggers`），本处用现有 `IconGlyph.IconKind` + ViewModel 状态绑定等价实现；窗口控制按钮（全屏/最小化/最大化）沿用本项目既有交互，仅修正最小化图标字形。
+
+## 2026-10-02 浏览页搜索框改为可折叠（参考项目 PlaylistControl 效果）
+
+- `View/MusicBrowsePage/MusicBrowsePage.xaml`：将原本常驻的 `AutoSuggestBox` 改为「搜索图标按钮（`AppViewModel.SearchToggleCommand`）+ 可折叠 `AutoSuggestBox`」结构；`AutoSuggestBox` 的 `Width`/`Visibility` 绑定到 `AppViewModel.IsSearchExpanded`（经 `BoolToDoubleConverter`/`BoolToVisibilityConverter`）。`x:Uid="SearchMusic"` 保留，占位符仍走本地化资源。
+- `ViewModel/AppViewModel.cs`：新增 `IsSearchExpanded`（折叠/展开状态，跨页保持）与 `SearchToggleCommand`（首次点击展开、再次点击清空 `SearchText` 并收起）。
+- `View/MusicBrowsePage/MusicBrowsePage.xaml.cs`：订阅 `AppViewModel.PropertyChanged`，`IsSearchExpanded` 变 true 时通过 `DispatcherQueue` 聚焦 `SearchAutoSuggestBox`。
+- `Converters/BoolToVisibilityConverter.cs` / `Converters/BoolToDoubleConverter.cs`：新增两个转换器，并在 `Style/ConverterDictionary.xaml` 注册（`BoolToVisibilityConverter`、`BoolToDoubleConverter`）。
+- 说明：参考项目 WPF 的 `Style.Triggers` 占位符在 WinUI 中改由 `AutoSuggestBox.PlaceholderText`（经 `x:Uid` 资源）原生实现；聚焦用 `Focus(FocusState.Keyboard)` 替代 WPF 的消息机制。
+
+## 2026-10-02 侧边栏：保留汉堡按钮（换图标）+ 搜索框移至浏览页
+
+- `View/MainPage.xaml`：保留默认 `IsPaneToggleButtonVisible`（汉堡按钮直接用于开合导航栏），仅隐藏返回按钮 `IsBackButtonVisible="Collapsed"`；从 `NavigationView` 移除原 `AutoSuggestBox`，不再在侧边栏显示搜索框。
+- `View/MainPage.xaml.cs`：窗格开合（`PaneOpened`/`PaneClosed`）时，通过视觉树替换默认汉堡按钮（`PaneToggleButton`）内部 `FontIcon` 字形为 `InHome`/`BackHome`（按 `AreOtherButtonsVisible` 切换），并折叠默认的收起箭头按钮（`PaneCloseButton`）以避免重复。
+- `View/MusicBrowsePage/MusicBrowsePage.xaml`：将搜索框（`AutoSuggestBox`，绑定 `AppViewModel.SearchText`）移到“全部播放 / 随机播放”按钮之后（同处一行；同时将该行 `Grid.Row` 由 0 修正为 1，使其位于标题行下方，修正原本与标题重叠的问题）。
+- `ViewModel/Pages/MainViewModel.cs`：新增 `AreOtherButtonsVisible`（侧边栏展开时为 true）与计算属性 `NavButtonIcon`（在 `InHome`/`BackHome` 间切换）。
+- `Helper/IconKind.cs` / `Helper/IconService.cs`：新增 `InHome`/`BackHome` 两个成员（**字形为占位** `\uE10F` / `\uE72B`，需按参考项目调整）。
+- 说明：参考项目的 `CustomIcon` + `Style.Triggers` 为 WPF 写法，WinUI 3 不支持；此处改用 `IconGlyph.IconKind` + ViewModel 计算属性等价实现。汉堡按钮图标与 `AreOtherButtonsVisible` 判定条件（当前取 `IsPaneOpen`）后续可按参考项目微调。
+
+## 2026-10-02 字符图标集中化：批量替换剩余 XAML 的 Glyph 字面量
+
+- 在 `Helper/IconKind.cs` 与 `Helper/IconService.cs` 补充 36 个成员及映射，覆盖此前散落在 24 个 XAML 文件中的 111 处静态 `Glyph="&#xXXXX;"` 字形（含 `Music/Image/Save/More/Close/Import/...` 及少数含义待定、暂以 `GlyphE...` 命名的成员）。
+- 通过脚本将 24 个 XAML 文件中全部静态字形改为 `helper:IconGlyph.IconKind="..."` 引用，缺失 `xmlns:helper` 的文件自动补上命名空间；`StatsPage` 原显式 `SymbolThemeFontFamily` 让位于统一的 Fluent 字体。
+- 说明：仅替换静态字面量；`Glyph="{x:Bind ...}"` 等动态绑定（如收藏/来源/WebDAV 树节点）保持原样不变。集中后所有字形字形唯一真源在 `IconService`；`GlyphE...` 占位名可在后续按语义改名。
+
+## 2026-10-02 集中式字符图标服务（IconKind + IconService）
+
+- `Helper/IconKind.cs`（新增）：字符图标类型枚举，作为图标的唯一类型来源。
+- `Helper/IconService.cs`（新增）：静态 `GetIconChar(IconKind)`，集中所有 Segoe Fluent Icons 字形（`\uXXXX` 字面量唯一真源）。
+- `Helper/IconGlyph.cs`（新增）：WinUI `FontIcon` 附加属性 `IconGlyph.IconKind`，XAML 用枚举名引用图标并自动套用 Segoe Fluent Icons 字体，`<FontIcon helper:IconGlyph.IconKind="Play"/>`。
+- `Utils/BindUtils.cs`：播放/暂停、播放模式、收藏、音量、全屏、音乐来源、锁定、桌面歌词、逐字、存在设备共十余处字形字面量收敛到 `IconService`，消除散落硬编码。
+- `View/MainPage.xaml` + `View/MainPage.xaml.cs`：侧边栏 5 个导航项与设置项改用 `IconGlyph.IconKind`；新增 `ApplyNavIconSelectionStates`（订阅 `SelectionChanged`）实现选中态图标随变（沿用参考项目 MusicPlayer 的字形方向：选中=空心）。仅示范迁移，其余 XAML 的 `Glyph` 字面量留待后续逐一替换。
+
+## 2026-10-02 侧边栏导航重组：全部歌曲/音乐库/歌手列表/专辑列表
+
+- `View/MainPage.xaml`：NavigationView 菜单重组为"全部歌曲、音乐库、歌手列表、专辑列表、统计"（+设置），替代原"音乐来源/音乐浏览/播放列表/统计"；图标选用 Audio/Library/People/唱片。
+- `View/MainPage.xaml.cs`：`NavigationView_ItemInvoked` 改为新导航映射（歌曲/歌手/专辑项导航到 MusicBrowsePage 并切换对应子页）；新增 `NavigateToMusicBrowseSubPage`、`SyncNavigationSelection`（子页变化同步导航选中态，folder/favourite 保持"音乐库"选中）、`SetSelectedNavItemByTag`（按 Tag 查找，替换 `MenuItems[1]` 硬编码）；`NavigateToDefaultPage` 按新 tag 映射并兼容旧配置值。
+- `View/MusicBrowsePage/MusicBrowsePage.xaml`：移除顶部 SelectorBar；标题改"全部歌曲"；顶栏第二行新增"播放全部/随机播放"按钮（Play/Shuffle 图标）；USB 设备/远程源/排序下拉维持原样。
+- `View/MusicBrowsePage/MusicBrowsePage.xaml.cs`：删除 `SelectPage_SelectionChanged`/`ForceSelectorBarSelection`/`_syncingSelectorBar`；`SelectBarItem(tag)` 保留为侧边导航/启动恢复/交叉链接的统一入口。
+- `ViewModel/Pages/MusicBrowseViewModel.cs`：`SelectedPage`（SelectorBarItem）重构为 `SelectedPageTag`（字符串 tag）驱动，`OnSelectionChanged` 按 tag 分发并回调 `MainPage.SyncNavigationSelection`；新增 `PlayAllCommand`/`ShufflePlayCommand`（队列=SongsSource，随机播放先切随机模式再替换队列）。
+- `View/MusicLibraryPage.xaml/.cs`（新增）：音乐库页，合并原音乐来源管理（本地文件夹/WebDAV/拖放，绑定 AddFolderViewModel 单例）与播放列表（收藏、文件夹浏览入口置顶，歌单点击进入 PlayListPage 详情）。
+- `View/AddFolderPage.xaml/.cs`（删除）、`WinUIMusicPlayer.csproj`：来源管理功能并入音乐库页，移除页面与注册条目。
+- `View/SubView/Settings/GeneralSettingsControl.xaml`：默认启动页下拉改为新导航项（全部歌曲/音乐库/歌手列表/专辑列表/统计）。
+- `State/GeneralPreferencesState.cs`、`Model/SaveSettings.cs`：默认启动页默认值改为 AllSongs。
+- `Services/MusicDatabaseService.cs`：载入设置时将旧版启动页 tag（AddFolder/PlayLists→MusicLibrary、MusicBrowse→AllSongs）一次性迁移。
+- `Strings/*/Resources.resw`：七语言新增 AllSongs/MusicLibrary/ArtistList/AlbumList/ShufflePlay 及启动页下拉键；清理 SelectorBar 与 AddFolderPage 遗留的无引用键。
+- 兼容性：旧版"默认启动页"配置自动迁移到语义最接近的新导航项；"默认音乐页"（song/album/artist/folder/favourite）设置继续生效。
+- 验证：x64 构建 0 错误；七语言新键与死键清理静态检查通过。UI 交互（导航选中态同步、cross-link、收藏/文件夹入口）待运行验证。
+
+## 2026-10-02 底栏封面改为圆形旋转（对齐 WPF 参考）
+
+- `View/MainPage.xaml`：收藏按钮封面改为 60×60 圆形（`CornerRadius=30` + 圆形 `RectangleGeometry` 裁剪），并加入 `AlbumCoverRotateTransform`。
+- `View/MainPage.xaml.cs`：订阅 `AppViewModel.IsPlaying` 变化，播放时让封面以 90 秒/圈持续旋转，暂停/停止时 `Pause()` 保留当前角度，恢复播放时无缝衔接；页面加载时按当前状态初始化。
+
+## 2026-10-02 底部播放栏布局对齐 WPF 参考（贯穿式进度条）
+
+- `View/MainPage.xaml`：进度条改为贯穿式（独占顶部整行铺满）；进度时间/歌曲总时间紧随收藏按钮之后内联显示（与参考项目一致），不再与进度条同行；移除快进 10 秒、快退 10 秒两个按钮，其余按钮重新索引。
+- `Style/SilderDictionary.xaml`：`PlaybackSliderStyle` 滑块默认隐藏，仅在鼠标悬停、按下或获得焦点时淡入显示（Opacity=0 仍可交互）。
+
 ## 2026-09-27 关于页版权年份改为动态
 
 - `AboutSettingsControl.xaml`、`AboutSettingsControl.xaml.cs`：两处 `© 2026 Sennpei Studio` 硬编码改为 `x:Bind` 函数绑定，运行时取 `DateTime.Now.Year`，跨年无需发版更新。

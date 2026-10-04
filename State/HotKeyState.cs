@@ -16,9 +16,7 @@ public sealed class HotKeyState : ObservableObject
     public List<string> ShowWindowShortcut { get; set => SetProperty(ref field, value); } = ["Ctrl", "Alt", "W"];
     public List<string> ToggleFullScreenShortcut { get; set => SetProperty(ref field, value); } = ["Ctrl", "Alt", "F"];
     public List<string> ToggleDesktopLyricsShortcut { get; set => SetProperty(ref field, value); } = ["Ctrl", "Alt", "D"];
-    public List<string> ToggleDesktopLyricsLockShortcut { get; set => SetProperty(ref field, value); } = ["Ctrl", "Alt", "L"];
     public List<string> ToggleDesktopLyricsKaraokeShortcut { get; set => SetProperty(ref field, value); } = ["Ctrl", "Alt", "K"];
-    public List<string> ResetDesktopLyricsShortcut { get; set => SetProperty(ref field, value); } = ["Ctrl", "Alt", "R"];
     public bool HasGlobalHotKeyConflict { get; internal set => SetProperty(ref field, value); }
     public string GlobalHotKeyConflictTitle { get; internal set => SetProperty(ref field, value); } = string.Empty;
 }

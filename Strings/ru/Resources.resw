@@ -135,22 +135,43 @@
   <data name="ProgressTransmitting" xml:space="preserve">
     <value>Передача на USB-устройство</value>
   </data>
-  <data name="SongTab.Text" xml:space="preserve">
-    <value>Песни</value>
-  </data>
-  <data name="AlbumTab.Text" xml:space="preserve">
-    <value>Альбомы</value>
-  </data>
   <data name="AddFolder.Text" xml:space="preserve">
     <value>Добавить папку</value>
   </data>
-  <data name="MusicBrowse.Text" xml:space="preserve">
+  <data name="AllSongs.Text" xml:space="preserve">
+    <value>Все песни</value>
+  </data>
+  <data name="MusicLibrary.Text" xml:space="preserve">
     <value>Музыкальная библиотека</value>
   </data>
   <data name="PlayLists.Text" xml:space="preserve">
     <value>Плейлисты</value>
   </data>
+  <data name="ArtistList.Text" xml:space="preserve">
+    <value>Артисты</value>
+  </data>
+  <data name="AlbumList.Text" xml:space="preserve">
+    <value>Альбомы</value>
+  </data>
   <data name="Stats.Text" xml:space="preserve">
+    <value>Статистика</value>
+  </data>
+  <data name="ShufflePlay.Text" xml:space="preserve">
+    <value>Случайное воспроизведение</value>
+  </data>
+  <data name="AllSongsCombox.Content" xml:space="preserve">
+    <value>Все песни</value>
+  </data>
+  <data name="MusicLibraryCombox.Content" xml:space="preserve">
+    <value>Музыкальная библиотека</value>
+  </data>
+  <data name="ArtistListCombox.Content" xml:space="preserve">
+    <value>Артисты</value>
+  </data>
+  <data name="AlbumListCombox.Content" xml:space="preserve">
+    <value>Альбомы</value>
+  </data>
+  <data name="StatsCombox.Content" xml:space="preserve">
     <value>Статистика</value>
   </data>
   <data name="StatsPageTimeRange.Text" xml:space="preserve">
@@ -216,15 +237,27 @@
   <data name="AppMainTitle" xml:space="preserve">
     <value>HQ-плеер Original Sound</value>
   </data>
-  <data name="ArtistTab.Text" xml:space="preserve">
-    <value>Артисты</value>
-  </data>
   <data name="FolderTab.Text" xml:space="preserve">
     <value>Папки</value>
   </data>
-  <data name="FavouriteTab.Text" xml:space="preserve">
-    <value>Избранное</value>
-  </data>
+    <data name="FavouriteTab.Text" xml:space="preserve">
+      <value>Избранное</value>
+    </data>
+    <data name="PageTitleAllSongs" xml:space="preserve">
+      <value>Все песни</value>
+    </data>
+    <data name="PageTitleAlbumList" xml:space="preserve">
+      <value>Альбомы</value>
+    </data>
+    <data name="PageTitleArtistList" xml:space="preserve">
+      <value>Артисты</value>
+    </data>
+    <data name="PageTitleFolder" xml:space="preserve">
+      <value>Папки</value>
+    </data>
+    <data name="PageTitleFavourite" xml:space="preserve">
+      <value>Избранное</value>
+    </data>
   <data name="FavouritePlayListPageEmptyTitle.Text" xml:space="preserve">
     <value>В избранном пока пусто</value>
   </data>
@@ -309,24 +342,13 @@
   <data name="DefaultEntryInterface.Text" xml:space="preserve">
     <value>Стартвая страница</value>
   </data>
-  <data name="AddFolderCombox.Content" xml:space="preserve">
-    <value>Добавить папку</value>
-  </data>
-  <data name="MusicBrowseCombox.Content" xml:space="preserve">
-    <value>Музыкальная библиотека</value>
-  </data>
-  <data name="MusicBrowsePageTitle.Text" xml:space="preserve">
-    <value>Музыка</value>
-  </data>
   <data name="MusicBrowseEmptyTitle.Text" xml:space="preserve">
     <value>Ваша библиотека пуста</value>
   </data>
   <data name="MusicBrowseEmptySubtitle.Text" xml:space="preserve">
     <value>Добавьте локальную папку с музыкой, чтобы начать создавать свою библиотеку.</value>
   </data>
-  <data name="PlayListsCombox.Content" xml:space="preserve">
-    <value>Плейлисты</value>
-  </data>
+
   <data name="AlbumCombox.Content" xml:space="preserve">
     <value>Альбомы</value>
   </data>
@@ -1087,24 +1109,13 @@
   <data name="FolderNumberOfSongs.Text" xml:space="preserve">
     <value>песен</value>
   </data>
-  <data name="AddFolderPageTitle.Text" xml:space="preserve">
-    <value>Папки музыки</value>
-  </data>
-  <data name="AddFolderPageWelcomeTitle.Text" xml:space="preserve">
-    <value>Добро пожаловать в HQ-плеер Original Sound</value>
-  </data>
-  <data name="AddFolderPageWelcomeSubtitle.Text" xml:space="preserve">
-    <value>Добавьте локальные папки с музыкой, чтобы начать создавать свою библиотеку. Поддерживаются распространённые аудиоформаты с автоматическим поиском текстов и обложек.</value>
-  </data>
   <data name="AddFolderPageDragHint.Text" xml:space="preserve">
     <value>или перетащите папки сюда</value>
   </data>
   <data name="AddFolderPageDropOverlayText.Text" xml:space="preserve">
     <value>Отпустите, чтобы добавить папки</value>
   </data>
-  <data name="AddFolderPageFolderCountSuffix.Text" xml:space="preserve">
-    <value>папок</value>
-  </data>
+
   <data name="OpenFolderToolTip.Content" xml:space="preserve">
     <value>Открыть папку</value>
   </data>
@@ -1493,7 +1504,7 @@
     <value>Continuous</value>
   </data>
   <data name="IconDesktopLyrics.Text" xml:space="preserve">
-    <value>Текст песни на рабочем столе</value>
+    <value>Текст песни на панели задач</value>
   </data>
   <data name="IconLockDesktopLyrics" xml:space="preserve">
     <value>Заблокировать текст песни</value>
@@ -2217,6 +2228,9 @@
   <data name="WebDavScanAction" xml:space="preserve">
     <value>Обновить</value>
   </data>
+  <data name="WebDavAddSource" xml:space="preserve">
+    <value>Добавить сетевой источник</value>
+  </data>
   <data name="WebDavCacheLocationCard.Header" xml:space="preserve">
     <value>Расположение кэша</value>
   </data>
@@ -2306,5 +2320,17 @@ SHA-256: {5}
   <data name="WindowBackgroundLoadError" xml:space="preserve"><value>Не удалось загрузить фоновое изображение. Выберите доступный файл JPG, PNG, BMP или WebP.</value></data>
   <data name="CacheCleanupCard.Header" xml:space="preserve">
     <value>Очистка кэша</value>
+  </data>
+  <data name="ThemeToggleToLight" xml:space="preserve">
+    <value>Переключить на светлую тему</value>
+  </data>
+  <data name="ThemeToggleToDark" xml:space="preserve">
+    <value>Переключить на тёмную тему</value>
+  </data>
+  <data name="TaskbarLyricsPrevious" xml:space="preserve">
+    <value>Предыдущий трек</value>
+  </data>
+  <data name="TaskbarLyricsClose" xml:space="preserve">
+    <value>Закрыть текст песни</value>
   </data>
 </root>

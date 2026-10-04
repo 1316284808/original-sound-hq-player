@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <UserControl
     x:Class="WinUIMusicPlayer.View.SubView.Settings.GeneralSettingsControl"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:helper="using:WinUIMusicPlayer.Helper"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:CommunityToolkit.WinUI.Controls"
     xmlns:customControl="using:WinUIMusicPlayer.Controls"
@@ -109,7 +109,7 @@
                 <controls:SettingsCard
                     Visibility="{x:Bind tool:BindUtils.BoolToVisibilityConverter(ViewModel.AppViewModel.ExperimentalSurround51), Mode=OneWay}">
                     <controls:SettingsCard.HeaderIcon>
-                        <FontIcon Glyph="&#xE946;" />
+                        <FontIcon helper:IconGlyph.IconKind="Warning" />
                     </controls:SettingsCard.HeaderIcon>
                     <controls:SettingsCard.Header>
                         <TextBlock Text="{x:Bind ViewModel.AppViewModel.SurroundStatusText, Mode=OneWay}" TextWrapping="Wrap" />
@@ -139,7 +139,7 @@
                 <controls:SettingsCard
                     Visibility="{x:Bind tool:BindUtils.BoolToVisibilityConverter(ViewModel.AppViewModel.ExperimentalAtmosPassthrough), Mode=OneWay}">
                     <controls:SettingsCard.HeaderIcon>
-                        <FontIcon Glyph="&#xE946;" />
+                        <FontIcon helper:IconGlyph.IconKind="Warning" />
                     </controls:SettingsCard.HeaderIcon>
                     <controls:SettingsCard.Header>
                         <TextBlock Text="{x:Bind ViewModel.AppViewModel.AtmosStatusText, Mode=OneWay}" TextWrapping="Wrap" />
@@ -163,9 +163,11 @@
                         Width="300"
                         SelectedValue="{x:Bind ViewModel.AppViewModel.DefaultEntryComboBoxTag, Mode=TwoWay}"
                         SelectedValuePath="Tag">
-                        <ComboBoxItem x:Uid="AddFolderCombox" Tag="AddFolder" />
-                        <ComboBoxItem x:Uid="MusicBrowseCombox" Tag="MusicBrowse" />
-                        <ComboBoxItem x:Uid="PlayListsCombox" Tag="PlayLists" />
+                        <ComboBoxItem x:Uid="AllSongsCombox" Tag="AllSongs" />
+                        <ComboBoxItem x:Uid="MusicLibraryCombox" Tag="MusicLibrary" />
+                        <ComboBoxItem x:Uid="ArtistListCombox" Tag="ArtistList" />
+                        <ComboBoxItem x:Uid="AlbumListCombox" Tag="AlbumList" />
+                        <ComboBoxItem x:Uid="StatsCombox" Tag="Stats" />
                     </ComboBox>
                 </controls:SettingsCard>
 
@@ -429,7 +431,7 @@
                     </controls:SettingsCard.Header>
                     <Button Command="{x:Bind ViewModel.AppViewModel.TrimNowCommand, Mode=OneWay}">
                         <Button.Content>
-                            <FontIcon Glyph="&#xE895;" />
+                            <FontIcon helper:IconGlyph.IconKind="Trim" />
                         </Button.Content>
                     </Button>
                 </controls:SettingsCard>

@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Navigation;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.DataTransfer;
 using WinUIMusicPlayer.Helper;
@@ -43,6 +44,7 @@ namespace WinUIMusicPlayer.View
             DataContext = this;
             Focus(FocusState.Programmatic);
             Loaded += OnPageLoaded;
+            ViewModel.AppViewModel.PropertyChanged += OnAppViewModelPropertyChanged;
             NavigationCacheMode = NavigationCacheMode.Required;
         }
 
@@ -105,6 +107,15 @@ namespace WinUIMusicPlayer.View
             Loaded -= OnPageLoaded;
         }
 
+        /// <summary>搜索框展开（IsSearchExpanded 变 true）后自动聚焦，便于立即输入。</summary>
+        private void OnAppViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(AppViewModel.IsSearchExpanded) && ViewModel.AppViewModel.IsSearchExpanded)
+            {
+                DispatcherQueue.TryEnqueue(() => SearchAutoSuggestBox.Focus(FocusState.Keyboard));
+            }
+        }
+
         public void NavigatePage(Type pageType, object? parameter = null, NavigationTransitionInfo? navigationTransitionInfo = null)
         {
             ContentFrame.Navigate(pageType, parameter, navigationTransitionInfo);
@@ -115,57 +126,11 @@ namespace WinUIMusicPlayer.View
             return DialogHelper.ShowConfirmAsync(this.XamlRoot, "AreUSureDeleteFromDisk");
         }
 
-        private bool _syncingSelectorBar;
-
-        private void SelectPage_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
-        {
-            if (_syncingSelectorBar || sender.SelectedItem is not SelectorBarItem item || item == ViewModel.SelectedPage)
-            {
-                return;
-            }
-            ViewModel.SelectedPage = item;
-        }
-
+        /// <summary>切换内容区子页的统一入口：侧边导航、启动恢复、交叉链接均通过 tag 驱动。</summary>
         public void SelectBarItem(string name)
         {
-            foreach (var item in selectPage.Items)
-            {
-                if (item is SelectorBarItem selectorBarItem && selectorBarItem.Tag.ToString() == name)
-                {
-                    ViewModel.SelectedPage = selectorBarItem;
-                    if (!IsLoaded)
-                    {
-                        var target = selectorBarItem;
-                        Loaded += OnSelectorBarSyncLoaded;
-                        void OnSelectorBarSyncLoaded(object sender, RoutedEventArgs e)
-                        {
-                            Loaded -= OnSelectorBarSyncLoaded;
-                            if (ViewModel.SelectedPage != target) return;
-                            ForceSelectorBarSelection(target);
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-
-        private void ForceSelectorBarSelection(SelectorBarItem target)
-        {
-            SelectorBarItem? other = null;
-            foreach (var item in selectPage.Items)
-            {
-                if (item is SelectorBarItem sbi && sbi != target)
-                {
-                    other = sbi;
-                    break;
-                }
-            }
-            if (other is null) return;
-            _syncingSelectorBar = true;
-            selectPage.SelectedItem = other;
-            selectPage.SelectedItem = target;
-            _syncingSelectorBar = false;
-            selectPage.UpdateLayout();
+            if (string.IsNullOrEmpty(name)) return;
+            ViewModel.SelectedPageTag = name;
         }
 
         // USB 设备选择由 ComboBox SelectedItem 双向绑定 UsbDeviceService.SelectedDevice 完成，
@@ -241,6 +206,16 @@ namespace WinUIMusicPlayer.View
                 SelectBarItem("artist");
             }
         }
+
+        /// <summary>内容区子页是否处于详情态：决定返回键由浏览页内部消费还是回到上层（音乐库页）。</summary>
+        public bool IsSubPageInDetailMode => ContentFrame.Content switch
+        {
+            AlbumPage albumPage => albumPage.ViewModel.IsInDetailMode,
+            ArtistPage artistPage => artistPage.ViewModel.IsInDetailMode,
+            FolderBrowsePage folderPage => folderPage.ViewModel.IsInDetailMode,
+            PlayListPage playListPage => playListPage.ViewModel.IsInDetailMode,
+            _ => false,
+        };
 
         public void BackButton()
         {

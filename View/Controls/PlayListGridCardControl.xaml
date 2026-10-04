@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="WinUIMusicPlayer.View.Controls.PlayListGridCardControl"
+    xmlns:helper="using:WinUIMusicPlayer.Helper"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:behaviors="using:WinUIMusicPlayer.Behaviors"
+    xmlns:interactivity="using:Microsoft.Xaml.Interactivity"
+    xmlns:tools="using:WinUIMusicPlayer.Utils">
+
+    <!--  播放列表网格卡片：音乐库页与播放列表页共用；
+          封面 + 名称/曲目数，指针悬停显示播放与更多菜单（重命名 / 导出 / 删除）。  -->
+    <Grid
+        Width="170"
+        Height="200"
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center"
+        PointerEntered="OnCoverPointerEntered"
+        PointerExited="OnCoverPointerExited"
+        RowDefinitions="Auto,Auto">
+
+        <!--  封面：图片在上，占位音符在下（两者尺寸一致，图片透明处显示占位）  -->
+        <Border
+            x:Name="CoverBorder"
+            Grid.Row="0"
+            Width="158"
+            Height="158"
+            Margin="0,6,0,2"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Top"
+            CornerRadius="10"
+            Padding="0">
+            <Grid Width="158" Height="158">
+                <Image
+                    Canvas.ZIndex="1"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Stretch="UniformToFill">
+                    <interactivity:Interaction.Behaviors>
+                        <behaviors:AlbumCoverBehavior Music="{x:Bind PlayList.CoverMusic, Mode=OneWay}" />
+                    </interactivity:Interaction.Behaviors>
+                </Image>
+                <Grid
+                    Canvas.ZIndex="0"
+                    Width="158"
+                    Height="158"
+                    Background="{ThemeResource SolidBackgroundFillColorSecondaryBrush}">
+                    <FontIcon
+                        Canvas.ZIndex="0"
+                        FontSize="50"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        helper:IconGlyph.IconKind="Music" />
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!--  悬停操作层：对齐封面尺寸，操作按钮贴封面底部两角  -->
+        <Grid
+            x:Name="ActionOverlay"
+            Grid.Row="0"
+            Width="158"
+            Height="158"
+            Margin="0,6,0,2"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Top"
+            Canvas.ZIndex="2">
+            <Button
+                x:Name="PlayBtn"
+                Width="36"
+                Height="36"
+                Margin="4,0,4,4"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                AutomationProperties.Name="{x:Bind tools:ToolUtils.GetString('IconPlay')}"
+                Click="PlayPlayList_Click"
+                Style="{StaticResource CircularButtonStyle}"
+                Tag="{x:Bind PlayList, Mode=OneWay}"
+                ToolTipService.ToolTip="{x:Bind tools:ToolUtils.GetString('IconPlay')}"
+                Visibility="Collapsed">
+                <FontIcon FontSize="14" helper:IconGlyph.IconKind="Play" />
+            </Button>
+            <Button
+                x:Name="MoreBtn"
+                Width="36"
+                Height="36"
+                Margin="4,0,4,4"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Style="{StaticResource CircularButtonStyle}"
+                Tag="{x:Bind PlayList, Mode=OneWay}"
+                Visibility="Collapsed">
+                <FontIcon FontSize="14" helper:IconGlyph.IconKind="More" />
+                <Button.Flyout>
+                    <MenuFlyout>
+                        <MenuFlyoutItem
+                            x:Uid="Edit"
+                            Click="EditPlayListName_Click"
+                            Tag="{x:Bind PlayList, Mode=OneWay}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon helper:IconGlyph.IconKind="Image" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem
+                            x:Uid="ExportM3u8List"
+                            Click="ExportPlayList_Click"
+                            Tag="{x:Bind PlayList, Mode=OneWay}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon helper:IconGlyph.IconKind="Save" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem
+                            x:Uid="PlayListDeleteMenu"
+                            Click="RemovePlayList_Click"
+                            Tag="{x:Bind PlayList, Mode=OneWay}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon helper:IconGlyph.IconKind="Delete" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                    </MenuFlyout>
+                </Button.Flyout>
+            </Button>
+        </Grid>
+
+        <!--  标题行：名称 + 曲目数  -->
+        <Grid
+            Grid.Row="1"
+            Width="160"
+            Margin="0,6,0,6"
+            HorizontalAlignment="Center"
+            ColumnDefinitions="*,Auto">
+            <TextBlock
+                Grid.Column="0"
+                Margin="0,0,6,0"
+                VerticalAlignment="Center"
+                FontWeight="SemiBold"
+                MaxLines="1"
+                Text="{x:Bind PlayList.Name, Mode=OneWay}"
+                TextAlignment="Left"
+                TextTrimming="CharacterEllipsis" />
+            <TextBlock
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                FontSize="12"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="{x:Bind PlayList.SongCount, Mode=OneWay}"
+                TextAlignment="Right" />
+        </Grid>
+    </Grid>
+</UserControl>

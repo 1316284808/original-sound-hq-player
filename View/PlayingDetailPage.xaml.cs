@@ -1,7 +1,3 @@
-using AnimatedWin2dControls.Controls.AnimatedLyricsLineControl;
-using AnimatedWin2dControls.Controls.AnimatedTextBlock.Effects;
-using AnimatedWin2dControls.Controls.AnimatedTextBlock.Enums;
-using DevWinUI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
@@ -39,7 +35,6 @@ namespace WinUIMusicPlayer.View
         private const double PortraitEnterRatio = 1.15;
         private const double PortraitExitRatio = 1.10;
         private const double PortraitTopVerticalMargin = 20;
-        private const double textScale = 1.6;  
         public PlayingDetailPage(PlayingDetailViewModel viewModel)
         {
             this.InitializeComponent();
@@ -56,23 +51,6 @@ namespace WinUIMusicPlayer.View
         private void PlayingDetailPage_Loaded(object sender, RoutedEventArgs e)
         {
             _isLoaded = true;
-            if (ViewModel.AppViewModel.IsWin2dAnimatedText)
-            {
-                var effectType = ViewModel.AppViewModel.Win2dTextEffectType.Value;
-                // 1. 定义一个简单的局部函数或直接在表达式中实例化
-                AnimatedWin2dControls.Controls.AnimatedTextBlock.ITextEffect CreateEffect(AnimatedTextEffect type) => type switch
-                {
-                    AnimatedTextEffect.TextBlurEffect => new AnimatedWin2dControls.Controls.AnimatedTextBlock.Effects.TextBlurEffect(),
-                    AnimatedTextEffect.TextElasticEffect => new AnimatedWin2dControls.Controls.AnimatedTextBlock.Effects.TextElasticEffect(),
-                    AnimatedTextEffect.TextFadeEffect => new TextFadeEffect(),
-                    AnimatedTextEffect.TextMotionBlurEffect => new AnimatedWin2dControls.Controls.AnimatedTextBlock.Effects.TextMotionBlurEffect(),
-                    AnimatedTextEffect.TextPivotEffect => new AnimatedWin2dControls.Controls.AnimatedTextBlock.Effects.TextPivotEffect(),
-                    AnimatedTextEffect.TextWipeEffect => new TextWipeEffect(),
-                    AnimatedTextEffect.TextZoomEffect => new AnimatedWin2dControls.Controls.AnimatedTextBlock.Effects.TextZoomEffect(),
-                    _ => new AnimatedWin2dControls.Controls.AnimatedTextBlock.Effects.TextDefaultEffect()
-                };
-                AnimatedPlayingDetailTextBlock?.TextEffect = CreateEffect(effectType);
-            }
             App.MainWindow.SizeChanged += MainWindow_SizeChanged;
             App.MainWindow.AppWindow.Changed += AppWindow_Changed;
             ViewModel.AppViewModel.PropertyChanged += AppViewModel_PropertyChanged;
@@ -133,31 +111,25 @@ namespace WinUIMusicPlayer.View
 
             bool portrait = wantPortrait;
             double driver = windowSize.Width / _dpiScale;
-            var (lyrics, title, artist,info, topHeight) = driver switch
+            var (lyrics, topHeight) = driver switch
             {
-                <= 1024 => (36, 26, 22, 10,  260),
-                < 1280 => (42, 32, 24, 11,  280),
-                < 1600 => (48, 36, 26, 13, 300),
-                < 1920 => (56, 42, 32,  14, 320),
-                < 2560 => (68, 48, 36, 15, 340),
-                < 2880 => (76, 56, 40, 16, 360),
-                _ => (90, 64, 48, 18, 380)
+                <= 1024 => (36, 260),
+                < 1280 => (42, 280),
+                < 1600 => (48, 300),
+                < 1920 => (56, 320),
+                < 2560 => (68, 340),
+                < 2880 => (76, 360),
+                _ => (90, 380)
             };
 
             if (portrait)
-            { 
+            {
                 lyrics = (int)(lyrics * AppViewModel.PortraitLyricsScale);
-                title = (int)(title * textScale);
-                artist = (int)(artist * textScale);
-                info = (int)(info * textScale);
             }
 
             // 4. 应用变更
             await App.MainWindow.DispatcherQueue.EnqueueAsync(() =>
             {
-                ViewModel.TitleFontSize = title;
-                ViewModel.ArtistAlbumFontSize = artist;
-                ViewModel.InfoFontSize = info;
                 ViewModel.AppViewModel.LyricsFontSize = lyrics;
 
                 if (windowSize.Width > 0 && wantPortrait != _isPortraitWanted)
@@ -204,25 +176,16 @@ namespace WinUIMusicPlayer.View
                 LeftControlPanel.ColumnDefinitions.Clear();
                 LeftControlPanel.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
                 LeftControlPanel.Margin = new Thickness(10, PortraitTopVerticalMargin, 10, 0);
-                LeftControlPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(topHeight, GridUnitType.Pixel) });
                 LeftControlPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 LeftControlPanel.RowDefinitions.Clear();
-                LeftControlPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-                LeftControlPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 LeftControlPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
                 CoverContainer.VerticalAlignment = VerticalAlignment.Center;
                 CoverContainer.HorizontalAlignment = HorizontalAlignment.Center;
                 Grid.SetRow(CoverContainer, 0);
-                Grid.SetRowSpan(CoverContainer, 3);
+                Grid.SetRowSpan(CoverContainer, 1);
                 Grid.SetColumn(CoverContainer, 0);
                 Grid.SetColumnSpan(CoverContainer, 1);
-
-                AnimatedTextBlock.Margin = new Thickness(16, 0, 16, 0);
-                Grid.SetRow(AnimatedTextBlock, 1);
-                Grid.SetColumn(AnimatedTextBlock, 1);
-                Grid.SetRowSpan(AnimatedTextBlock, 1);
-                Grid.SetColumnSpan(AnimatedTextBlock, 1);
             }
             else
             {
@@ -253,7 +216,6 @@ namespace WinUIMusicPlayer.View
                 LeftControlPanel.RowDefinitions.Clear();
                 LeftControlPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
                 LeftControlPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(8, GridUnitType.Star) });
-                LeftControlPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 LeftControlPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(50, GridUnitType.Pixel) });
                 LeftControlPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
@@ -264,13 +226,6 @@ namespace WinUIMusicPlayer.View
                 Grid.SetRowSpan(CoverContainer, 1);
                 Grid.SetColumn(CoverContainer, 1);
                 Grid.SetColumnSpan(CoverContainer, 1);
-                AnimatedTextBlock.ClearValue(FrameworkElement.VerticalAlignmentProperty);
-                AnimatedTextBlock.ClearValue(FrameworkElement.MarginProperty);
-                AnimatedTextBlock.Margin = new Thickness(20, 0, 20, 0);
-                Grid.SetRow(AnimatedTextBlock, 2);
-                Grid.SetColumn(AnimatedTextBlock, 1);
-                Grid.SetRowSpan(AnimatedTextBlock, 1);
-                Grid.SetColumnSpan(AnimatedTextBlock, 1);
 
                 Grid.SetRow(LyricsRegionHost, 0);
                 Grid.SetColumn(LyricsRegionHost, 1);
@@ -382,33 +337,6 @@ namespace WinUIMusicPlayer.View
         private void CurrentPlayListTeachingTipPlayingDetailCloseButton_Click(object sender, RoutedEventArgs e)
         {
             CurrentPlayListTeachingTipPlayingDetail.IsOpen = false;
-        }
-
-        private void AutoScrollHover_PointerEntered(object sender, PointerRoutedEventArgs e)
-        {
-            if (ViewModel.AppViewModel.IsWin2dAnimatedText) return;
-            if (sender is AutoScrollView autoScrollView)
-            {
-                autoScrollView.IsPlaying = true;
-            }
-        }
-
-        private void AutoScrollHover_PointerCanceled(object sender, PointerRoutedEventArgs e)
-        {
-            if (ViewModel.AppViewModel.IsWin2dAnimatedText) return;
-            if (sender is AutoScrollView autoScrollView)
-            {
-                autoScrollView.IsPlaying = false;
-            }
-        }
-
-        private void AutoScrollHover_PointerExited(object sender, PointerRoutedEventArgs e)
-        {
-            if (ViewModel.AppViewModel.IsWin2dAnimatedText) return;
-            if (sender is AutoScrollView autoScrollView)
-            {
-                autoScrollView.IsPlaying = false;
-            }
         }
 
         private void VolumeSlider_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
@@ -542,6 +470,12 @@ namespace WinUIMusicPlayer.View
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
             _ = App.Services.GetRequiredService<MainPage>().SettingsDialog.ShowThemedAsync(this.XamlRoot);
+        }
+
+        private void MusicInfoButtonPlayingDetail_Click(object sender, RoutedEventArgs e)
+        {
+            // 与标题栏 CancelPlayingDetailButton 行为一致：点击歌曲信息退出播放详情页、返回浏览页
+            App.Services.GetRequiredService<MainPage>().NavigatebackToMusicBrowsePage();
         }
     }
 }

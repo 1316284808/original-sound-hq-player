@@ -4,7 +4,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     xmlns:vm="using:WinUIMusicPlayer.ViewModel"
-    x:Uid="WebDavBrowserDialog" Title="WebDAV">
+    x:Uid="WebDavBrowserDialog"
+    Title="WebDAV"
+    CornerRadius="10">
     <Grid Width="560" Height="470" RowDefinitions="Auto,*,Auto" RowSpacing="10">
         <TextBlock x:Uid="WebDavBrowserTreeHelp" TextWrapping="Wrap"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

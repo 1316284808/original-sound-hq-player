@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using WinUIMusicPlayer.Helper;
 using WinUIMusicPlayer.Model;
 using WinUIMusicPlayer.Services;
 using WinUIMusicPlayer.ViewModel;
@@ -22,11 +23,11 @@ namespace WinUIMusicPlayer.Utils
         public static Visibility StringToVisibilityConverter(string? value)
             => IsNotEmptyString(value) ? Visibility.Visible : Visibility.Collapsed;
         /// <summary>列表来源标识只依赖曲目状态，不在可视项绑定中读取数据库或启动网络请求。</summary>
-        public static string MusicSourceGlyph(bool isRemote) => isRemote ? "\uE753" : "\uE8B7";
+        public static string MusicSourceGlyph(bool isRemote) => IconService.GetIconChar(isRemote ? IconKind.SourceRemote : IconKind.SourceLocal);
         public static string MusicSourceGlyph(bool isRemote, bool isOffline)
-            => isRemote && isOffline ? "\uF384" : MusicSourceGlyph(isRemote);
+            => isRemote && isOffline ? IconService.GetIconChar(IconKind.SourceOffline) : MusicSourceGlyph(isRemote);
         public static string MusicSourceGlyph(bool isRemote, bool isOffline, bool isCached)
-            => isRemote && isCached ? "\uEBD3" : MusicSourceGlyph(isRemote, isOffline);
+            => isRemote && isCached ? IconService.GetIconChar(IconKind.SourceCached) : MusicSourceGlyph(isRemote, isOffline);
         public static string MusicSourceLabel(bool isRemote) => isRemote ? "WebDAV" : GetString("WebDavLocalSources");
         public static string MusicSourceLabel(bool isRemote, bool isCached)
             => isRemote && isCached ? GetString("WebDavCachedAudio") : MusicSourceLabel(isRemote);
@@ -69,7 +70,7 @@ namespace WinUIMusicPlayer.Utils
         //      仍需 ConvertBack 的 TwoWay 场景（设置页 ComboBox/Slider/IsChecked）保留转换器类 ====
 
         public static string PlayStatusToGlyphConverter(bool isPlaying)
-            => isPlaying ? "\uF8AE" : "\uF5B0";
+            => IconService.GetIconChar(isPlaying ? IconKind.Pause : IconKind.Play);
 
         public static string PlayStatusToTextConverter(bool isPlaying)
             => isPlaying ? GetString("IconPause") : GetString("IconPlay");
@@ -77,29 +78,33 @@ namespace WinUIMusicPlayer.Utils
         public static string PlayModeToGlyphConverter(PlayMode playMode)
             => playMode switch
             {
-                PlayMode.SingleLoop => "\ue8ed",
-                PlayMode.ListLoop => "\ue8ee",
-                PlayMode.RandomLoop => "\ue8b1",
-                PlayMode.RepeatOff => "\uF5E7",
-                _ => "\ue8ee",
+                PlayMode.SingleLoop => IconService.GetIconChar(IconKind.RepeatOne),
+                PlayMode.ListLoop => IconService.GetIconChar(IconKind.RepeatAll),
+                PlayMode.RandomLoop => IconService.GetIconChar(IconKind.Shuffle),
+                PlayMode.RepeatOff => IconService.GetIconChar(IconKind.PlayModeRepeatOff),
+                _ => IconService.GetIconChar(IconKind.RepeatAll),
             };
 
         public static string FavouriteGlyphConverter(bool isFavourite)
-            => isFavourite ? "\uEB52" : "\uEB51";
+            => IconService.GetIconChar(isFavourite ? IconKind.HeartFill : IconKind.Heart);
 
         public static string VolumeToGlyphConverter(double volume)
-            => volume > 75 ? "\ue995"
-             : volume > 50 ? "\ue994"
-             : volume > 25 ? "\ue993"
-             : volume > 0 ? "\uE992"
-             : "\ue74f";
+            => IconService.GetIconChar(volume > 75 ? IconKind.VolumeHigh
+             : volume > 50 ? IconKind.VolumeMedium
+             : volume > 25 ? IconKind.VolumeLow
+             : volume > 0 ? IconKind.VolumeMin
+             : IconKind.VolumeMute);
 
         public static string FullScreenGlyphConverter(bool isFullScreen)
-            => isFullScreen ? "\uE73F" : "\uE740";
+            => IconService.GetIconChar(isFullScreen ? IconKind.FullScreenExit : IconKind.FullScreenEnter);
+
+        /// <summary>主题切换按钮提示：显示点击后进入的模式（当前暗色→切亮色，当前亮色→切暗色）。</summary>
+        public static string ThemeToggleTextConverter(bool isDarkMode)
+            => isDarkMode ? GetString("ThemeToggleToLight") : GetString("ThemeToggleToDark");
 
         public static string IsExistOnDeviceGlyphConverter(int existOnDevice)
-            => existOnDevice == 1 ? "\uE73A"
-             : existOnDevice == 2 ? "\uE73D"
+            => existOnDevice == 1 ? IconService.GetIconChar(IconKind.ExistOnDevice1)
+             : existOnDevice == 2 ? IconService.GetIconChar(IconKind.ExistOnDevice2)
              : string.Empty;
 
         public static Visibility BoolToVisibilityConverter(bool isVisible)
@@ -157,6 +162,12 @@ namespace WinUIMusicPlayer.Utils
             return App.Services.GetRequiredService<AppViewModel>().GetAlbumSongCount(album).ToString();
         }
 
+        public static string ArtistSongsConverter(string artist)
+        {
+            if (string.IsNullOrEmpty(artist)) return "0";
+            return App.Services.GetRequiredService<AppViewModel>().GetArtistSongCount(artist).ToString();
+        }
+
         public static double BoolToOpacityRe08Converter(bool isInPlayingDetailMode)
         {
             return isInPlayingDetailMode ? 0 : 0.8;
@@ -164,15 +175,15 @@ namespace WinUIMusicPlayer.Utils
 
         /// <summary>桌面歌词锁定状态 → 图形，显示当前状态（锁定=闭锁 e72e，未锁=开锁 e785）。</summary>
         public static string LockGlyphConverter(bool locked)
-            => locked ? "\uE72E" : "\uE785";
+            => IconService.GetIconChar(locked ? IconKind.LockLocked : IconKind.LockUnlocked);
 
         /// <summary>桌面歌词开关状态 → 图形，显示当前状态（开启=可见 e890，关闭=隐藏 ed1a）。</summary>
         public static string DesktopLyricsGlyphConverter(bool enabled)
-            => enabled ? "\uE890" : "\uED1A";
+            => IconService.GetIconChar(enabled ? IconKind.DesktopLyricsOn : IconKind.DesktopLyricsOff);
 
         /// <summary>逐字效果开关状态 → 复选框图形，显示当前状态（开启=勾选 e73a，关闭=空框 e739）。</summary>
         public static string KaraokeGlyphConverter(bool enabled)
-            => enabled ? "\uE73A" : "\uE739";
+            => IconService.GetIconChar(enabled ? IconKind.KaraokeOn : IconKind.KaraokeOff);
 
         /// <summary>桌面歌词锁定状态 → 托盘菜单文字，显示点击后的动作（未锁=锁定，已锁=解锁），文案经 resw 本地化。</summary>
         public static string LockDesktopLyricsTextConverter(bool locked)

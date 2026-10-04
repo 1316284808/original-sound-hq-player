@@ -5,6 +5,9 @@
     xmlns:converters="using:WinUIMusicPlayer.Converters">
     <!--  仅保留仍需 ConvertBack 的 TwoWay 场景与 Slider 内置转换；只读展示转换已迁移至 BindUtils 函数绑定  -->
     <converters:BooleanNegationConverter x:Key="BooleanNegationConverter" />
+    <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    <converters:BoolToDoubleConverter x:Key="BoolToDoubleConverter" />
+
     <converters:AdvancedThumbToolTipValueConverter x:Key="AdvancedThumbToolTipValueConverter" />
     <converters:ThicknessToDoubleConverter x:Key="ThicknessToDoubleConverter" />
     <converters:EnumToStringConverter x:Key="EnumToStringConverter" />

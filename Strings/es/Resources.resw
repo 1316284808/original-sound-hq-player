@@ -135,22 +135,43 @@
   <data name="ProgressTransmitting" xml:space="preserve">
     <value>Transmitiendo al dispositivo USB</value>
   </data>
-  <data name="SongTab.Text" xml:space="preserve">
-    <value>Canciones</value>
-  </data>
-  <data name="AlbumTab.Text" xml:space="preserve">
-    <value>Álbumes</value>
-  </data>
   <data name="AddFolder.Text" xml:space="preserve">
     <value>Agregar carpeta</value>
   </data>
-  <data name="MusicBrowse.Text" xml:space="preserve">
+  <data name="AllSongs.Text" xml:space="preserve">
+    <value>Todas las canciones</value>
+  </data>
+  <data name="MusicLibrary.Text" xml:space="preserve">
     <value>Biblioteca de música</value>
   </data>
   <data name="PlayLists.Text" xml:space="preserve">
     <value>Playlist</value>
   </data>
+  <data name="ArtistList.Text" xml:space="preserve">
+    <value>Artistas</value>
+  </data>
+  <data name="AlbumList.Text" xml:space="preserve">
+    <value>Álbumes</value>
+  </data>
   <data name="Stats.Text" xml:space="preserve">
+    <value>Estadísticas</value>
+  </data>
+  <data name="ShufflePlay.Text" xml:space="preserve">
+    <value>Reproducción aleatoria</value>
+  </data>
+  <data name="AllSongsCombox.Content" xml:space="preserve">
+    <value>Todas las canciones</value>
+  </data>
+  <data name="MusicLibraryCombox.Content" xml:space="preserve">
+    <value>Biblioteca de música</value>
+  </data>
+  <data name="ArtistListCombox.Content" xml:space="preserve">
+    <value>Artistas</value>
+  </data>
+  <data name="AlbumListCombox.Content" xml:space="preserve">
+    <value>Álbumes</value>
+  </data>
+  <data name="StatsCombox.Content" xml:space="preserve">
     <value>Estadísticas</value>
   </data>
   <data name="StatsPageTimeRange.Text" xml:space="preserve">
@@ -216,15 +237,27 @@
   <data name="AppMainTitle" xml:space="preserve">
     <value>Reproductor HQ Sonido Original</value>
   </data>
-  <data name="ArtistTab.Text" xml:space="preserve">
-    <value>Artistas</value>
-  </data>
   <data name="FolderTab.Text" xml:space="preserve">
     <value>Carpetas</value>
   </data>
-  <data name="FavouriteTab.Text" xml:space="preserve">
-    <value>Favoritos</value>
-  </data>
+    <data name="FavouriteTab.Text" xml:space="preserve">
+      <value>Favoritos</value>
+    </data>
+    <data name="PageTitleAllSongs" xml:space="preserve">
+      <value>Todas las canciones</value>
+    </data>
+    <data name="PageTitleAlbumList" xml:space="preserve">
+      <value>Álbumes</value>
+    </data>
+    <data name="PageTitleArtistList" xml:space="preserve">
+      <value>Artistas</value>
+    </data>
+    <data name="PageTitleFolder" xml:space="preserve">
+      <value>Carpetas</value>
+    </data>
+    <data name="PageTitleFavourite" xml:space="preserve">
+      <value>Favoritos</value>
+    </data>
   <data name="FavouritePlayListPageEmptyTitle.Text" xml:space="preserve">
     <value>Aún no hay favoritas</value>
   </data>
@@ -309,24 +342,13 @@
   <data name="DefaultEntryInterface.Text" xml:space="preserve">
     <value>Interfaz de entrada predeterminada</value>
   </data>
-  <data name="AddFolderCombox.Content" xml:space="preserve">
-    <value>Agregar carpeta</value>
-  </data>
-  <data name="MusicBrowseCombox.Content" xml:space="preserve">
-    <value>Biblioteca de música</value>
-  </data>
-  <data name="MusicBrowsePageTitle.Text" xml:space="preserve">
-    <value>Música</value>
-  </data>
   <data name="MusicBrowseEmptyTitle.Text" xml:space="preserve">
     <value>Tu biblioteca está vacía</value>
   </data>
   <data name="MusicBrowseEmptySubtitle.Text" xml:space="preserve">
     <value>Agrega una carpeta de música local para comenzar a construir tu biblioteca.</value>
   </data>
-  <data name="PlayListsCombox.Content" xml:space="preserve">
-    <value>Playlist</value>
-  </data>
+
   <data name="AlbumCombox.Content" xml:space="preserve">
     <value>Álbumes</value>
   </data>
@@ -1087,24 +1109,13 @@
   <data name="FolderNumberOfSongs.Text" xml:space="preserve">
     <value>Canciones</value>
   </data>
-  <data name="AddFolderPageTitle.Text" xml:space="preserve">
-    <value>Carpetas de música</value>
-  </data>
-  <data name="AddFolderPageWelcomeTitle.Text" xml:space="preserve">
-    <value>Bienvenido a Reproductor HQ Sonido Original</value>
-  </data>
-  <data name="AddFolderPageWelcomeSubtitle.Text" xml:space="preserve">
-    <value>Agrega carpetas de música locales para comenzar a construir tu biblioteca. Admite formatos de audio comunes con sincronización automática de letras y carátulas.</value>
-  </data>
   <data name="AddFolderPageDragHint.Text" xml:space="preserve">
     <value>o arrastra carpetas aquí</value>
   </data>
   <data name="AddFolderPageDropOverlayText.Text" xml:space="preserve">
     <value>Suelta para agregar carpetas</value>
   </data>
-  <data name="AddFolderPageFolderCountSuffix.Text" xml:space="preserve">
-    <value>carpetas</value>
-  </data>
+
   <data name="OpenFolderToolTip.Content" xml:space="preserve">
     <value>Abrir carpeta</value>
   </data>
@@ -1493,7 +1504,7 @@
     <value>Continuous</value>
   </data>
   <data name="IconDesktopLyrics.Text" xml:space="preserve">
-    <value>Letra en el escritorio</value>
+    <value>Letra en la barra de tareas</value>
   </data>
   <data name="IconLockDesktopLyrics" xml:space="preserve">
     <value>Bloquear letra en el escritorio</value>
@@ -2217,6 +2228,9 @@
   <data name="WebDavScanAction" xml:space="preserve">
     <value>Actualizar</value>
   </data>
+  <data name="WebDavAddSource" xml:space="preserve">
+    <value>Agregar origen de red</value>
+  </data>
   <data name="WebDavCacheLocationCard.Header" xml:space="preserve">
     <value>Ubicación de caché</value>
   </data>
@@ -2306,5 +2320,17 @@ SHA-256: {5}
   <data name="WindowBackgroundLoadError" xml:space="preserve"><value>No se puede cargar la imagen de fondo. Elige una imagen JPG, PNG, BMP o WebP accesible.</value></data>
   <data name="CacheCleanupCard.Header" xml:space="preserve">
     <value>Borrar caché</value>
+  </data>
+  <data name="ThemeToggleToLight" xml:space="preserve">
+    <value>Cambiar a modo claro</value>
+  </data>
+  <data name="ThemeToggleToDark" xml:space="preserve">
+    <value>Cambiar a modo oscuro</value>
+  </data>
+  <data name="TaskbarLyricsPrevious" xml:space="preserve">
+    <value>Pista anterior</value>
+  </data>
+  <data name="TaskbarLyricsClose" xml:space="preserve">
+    <value>Cerrar letras</value>
   </data>
 </root>

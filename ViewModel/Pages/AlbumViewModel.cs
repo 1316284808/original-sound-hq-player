@@ -127,7 +127,14 @@ namespace WinUIMusicPlayer.ViewModel
         [RelayCommand]
         private async Task Play()
         {
-            if (!AppViewModel.CanStartPlayback) return;
+            if (SelectedItem is null) return;
+            await PlayAlbum(SelectedItem);
+        }
+
+        /// <summary>播放某张专辑的全部歌曲；右键菜单与卡片播放按钮共用。</summary>
+        public async Task PlayAlbum(Music album)
+        {
+            if (album is null || !AppViewModel.CanStartPlayback) return;
             var srcSpan = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(AppViewModel.SongsSource);
             var pool = System.Buffers.ArrayPool<Music>.Shared;
             var buf = pool.Rent(Math.Max(srcSpan.Length, 1));
@@ -137,7 +144,7 @@ namespace WinUIMusicPlayer.ViewModel
                 for (int i = 0; i < srcSpan.Length; i++)
                 {
                     var m = srcSpan[i];
-                    if (m.Album is not null && m.Album.Equals(SelectedItem.Album, StringComparison.OrdinalIgnoreCase))
+                    if (m.Album is not null && m.Album.Equals(album.Album, StringComparison.OrdinalIgnoreCase))
                     {
                         buf[count++] = m;
                     }

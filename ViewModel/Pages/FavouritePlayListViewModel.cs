@@ -84,7 +84,8 @@ namespace WinUIMusicPlayer.ViewModel
         public void ReceiveNavigation()
         {
             UpdateMusicListView();
-            AppViewModel.IsBackBtnEnable = false;
+            // 「最爱」无独立侧栏导航项，入口在音乐库页：返回键用于回到音乐库页。
+            AppViewModel.IsBackBtnEnable = true;
         }
 
         public void UpdateMusicListView()

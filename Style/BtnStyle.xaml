@@ -130,14 +130,14 @@
                                 <VisualState x:Name="Normal" />
                                 <VisualState x:Name="PointerOver">
                                     <VisualState.Setters>
-                                        <Setter Target="Ellipse.Background" Value="{ThemeResource AppBarButtonBackgroundPointerOver}" />
+                                        <Setter Target="Ellipse.Background" Value="{ThemeResource ButtonBackgroundPointerOver}" />
                                         <Setter Target="Ellipse.BorderBrush" Value="{ThemeResource AccentTextFillColorTertiaryBrush}" />
                                         <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource AppBarButtonForegroundPointerOver}" />
                                     </VisualState.Setters>
                                 </VisualState>
                                 <VisualState x:Name="Pressed">
                                     <VisualState.Setters>
-                                        <Setter Target="Ellipse.Background" Value="{ThemeResource AppBarButtonBackgroundPressed}" />
+                                        <Setter Target="Ellipse.Background" Value="{ThemeResource ButtonBackgroundPressed}" />
                                         <Setter Target="Ellipse.BorderBrush" Value="{ThemeResource AccentTextFillColorTertiaryBrush}" />
                                         <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource AppBarButtonForegroundPressed}" />
                                     </VisualState.Setters>
@@ -159,12 +159,18 @@
         <Setter Property="animations:FluentAnimation.PointerDownScale" Value="0.85" />
     </Style>
 
+    <!--  悬浮 / 按下底色用默认 Button 的画刷（ButtonBackgroundPointerOver / Pressed），
+          与无样式按钮（如返回按钮）一致；AppBarButton* 的悬浮色太淡（浅色主题下几乎看不见）。  -->
     <Style x:Key="MenuButtonStyle" TargetType="Button">
+        <Setter Property="Margin" Value="5"/>
+        <Setter Property="MinHeight" Value="35"/>
+        <Setter Property="MinWidth" Value="40"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="CornerRadius" Value="8"/>
         <Setter Property="Background" Value="{ThemeResource AppBarButtonBackground}" />
         <Setter Property="BorderBrush" Value="{ThemeResource AppBarButtonBorderBrush}" />
-        <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
         <Setter Property="Foreground" Value="{ThemeResource AppBarButtonForeground}" />
-        <Setter Property="Padding" Value="8,5" />
+      
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -187,14 +193,14 @@
                                 <VisualState x:Name="Normal" />
                                 <VisualState x:Name="PointerOver">
                                     <VisualState.Setters>
-                                        <Setter Target="Root.Background" Value="{ThemeResource AppBarButtonBackgroundPointerOver}" />
+                                        <Setter Target="Root.Background" Value="{ThemeResource ButtonBackgroundPointerOver}" />
                                         <Setter Target="Root.BorderBrush" Value="{ThemeResource AppBarButtonBorderBrushPointerOver}" />
                                         <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource AppBarButtonForegroundPointerOver}" />
                                     </VisualState.Setters>
                                 </VisualState>
                                 <VisualState x:Name="Pressed">
                                     <VisualState.Setters>
-                                        <Setter Target="Root.Background" Value="{ThemeResource AppBarButtonBackgroundPressed}" />
+                                        <Setter Target="Root.Background" Value="{ThemeResource ButtonBackgroundPressed}" />
                                         <Setter Target="Root.BorderBrush" Value="{ThemeResource AppBarButtonBorderBrushPressed}" />
                                         <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource AppBarButtonForegroundPressed}" />
                                     </VisualState.Setters>
@@ -381,13 +387,13 @@
                                 <VisualState x:Name="Normal" />
                                 <VisualState x:Name="PointerOver">
                                     <VisualState.Setters>
-                                        <Setter Target="RootGrid.Background" Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+                                        <Setter Target="RootGrid.Background" Value="{ThemeResource ButtonBackgroundPointerOver}" />
                                         <Setter Target="RootGrid.BorderBrush" Value="{ThemeResource ControlStrokeColorSecondaryBrush}" />
                                     </VisualState.Setters>
                                 </VisualState>
                                 <VisualState x:Name="Pressed">
                                     <VisualState.Setters>
-                                        <Setter Target="RootGrid.Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                                        <Setter Target="RootGrid.Background" Value="{ThemeResource ButtonBackgroundPressed}" />
                                         <Setter Target="RootGrid.BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
                                     </VisualState.Setters>
                                 </VisualState>

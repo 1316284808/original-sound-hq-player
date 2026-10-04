@@ -29,10 +29,9 @@ namespace WinUIMusicPlayer.DesktopLyrics
         {
             if (_window is not null) return;
             _window = new DesktopLyricsWindow();
-            // 必须先显示再应用锁定：对未激活的窗口做 GWL_STYLE 切 Popup / 加 WS_EX_LAYERED
-            // 会破坏 XAML 岛的呈现与输入管线，后续解锁时窗口无响应且内容丢失。
+            // 必须先显示再应用窗口样式：对未激活的窗口做 GWL_STYLE 切 Popup / 加 WS_EX_LAYERED
+            // 会破坏 XAML 岛的呈现与输入管线，后续窗口无响应且内容丢失。
             _window.AppWindow.Show(false);
-            _window.ApplyLock(ViewModel.IsLocked);
         }
 
         public static void CloseWindow()
@@ -50,18 +49,14 @@ namespace WinUIMusicPlayer.DesktopLyrics
             }
         }
 
-        /// <summary>恢复默认尺寸并置于主屏工作区底部居中（窗口/托盘重置按钮调用）。</summary>
-        public static void ResetWindowBounds() => _window?.ApplyDefaultBounds();
-
         /// <summary>应用启动时按设置恢复（AppInitializerService 调用）。</summary>
         public static void RestoreFromSettings() => ViewModel.RestoreFromSettings();
 
-        /// <summary>应用退出清理（App.Current_Exit 调用）。边界为同步写，保证在 Environment.Exit 前完成。</summary>
+        /// <summary>应用退出清理（App.Current_Exit 调用）。</summary>
         public static void Shutdown()
         {
             _isShuttingDown = true;
             CloseWindow();
-            ViewModel.PersistBounds();
         }
     }
 }

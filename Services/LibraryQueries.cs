@@ -15,6 +15,7 @@ public sealed class LibraryQueries(LibraryState library)
     private readonly Dictionary<string, Music> _firstArtistIndex = new(capacity: 4096, StringComparer.Ordinal);
     private readonly Dictionary<string, Music> _firstFolderIndex = new(capacity: 4096, StringComparer.Ordinal);
     private readonly Dictionary<string, int> _albumSongCounts = new(capacity: 4096, StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _artistSongCounts = new(capacity: 4096, StringComparer.Ordinal);
     private long _indexedVersion = -1;
     private int _sourceFilter = -1;
     public void SetSourceFilter(int sourceId) { _sourceFilter = sourceId; _indexedVersion = -1; }
@@ -67,6 +68,7 @@ public sealed class LibraryQueries(LibraryState library)
         _firstArtistIndex.Clear();
         _firstFolderIndex.Clear();
         _albumSongCounts.Clear();
+        _artistSongCounts.Clear();
         var src = library.Songs;
         for (int i = 0; i < src.Count; i++)
         {
@@ -90,11 +92,14 @@ public sealed class LibraryQueries(LibraryState library)
 
     private void AddArtistIndexEntry(Music m)
     {
+        // 逐歌手累计曲目数：拆分结果已在本次循环内取得，不额外调用 GetArtistNames。
         var names = ArtistHelper.GetArtistNames(m.Author);
         for (int i = 0; i < names.Length; i++)
         {
-            if (!_firstArtistIndex.ContainsKey(names[i]))
-                _firstArtistIndex[names[i]] = ArtistHelper.CreateArtistTile(m, names[i]);
+            var name = names[i];
+            if (!_firstArtistIndex.ContainsKey(name))
+                _firstArtistIndex[name] = ArtistHelper.CreateArtistTile(m, name);
+            _artistSongCounts[name] = _artistSongCounts.GetValueOrDefault(name) + 1;
         }
     }
 
@@ -103,6 +108,13 @@ public sealed class LibraryQueries(LibraryState library)
         if (string.IsNullOrEmpty(album)) return 0;
         if (_indexedVersion != library.Version) RebuildIdIndex();
         return _albumSongCounts.TryGetValue(album, out var c) ? c : 0;
+    }
+
+    public int GetArtistSongCount(string? artist)
+    {
+        if (string.IsNullOrEmpty(artist)) return 0;
+        if (_indexedVersion != library.Version) RebuildIdIndex();
+        return _artistSongCounts.TryGetValue(artist, out var c) ? c : 0;
     }
 
 }

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <Page
     x:Class="WinUIMusicPlayer.View.FavouritePlayListPage"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:helper="using:WinUIMusicPlayer.Helper"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:WinUIMusicPlayer.View.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -11,9 +11,10 @@
     mc:Ignorable="d">
 
     <Page.Resources>
+        <!--  行高与圆角由 App.xaml 的 MusicRowListViewItemStyle 统一，此处只补右键菜单  -->
         <Style
             x:Key="ListViewItemStyle"
-            BasedOn="{StaticResource DefaultListViewItemStyle}"
+            BasedOn="{StaticResource MusicRowListViewItemStyle}"
             TargetType="ListViewItem">
             <Setter Property="ContextFlyout">
                 <Setter.Value>
@@ -58,7 +59,7 @@
                     <FontIcon
                         FontSize="44"
                         Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                        Glyph="&#xEB51;" />
+                        helper:IconGlyph.IconKind="Heart" />
                 </Border>
                 <TextBlock
                     x:Uid="FavouritePlayListPageEmptyTitle"

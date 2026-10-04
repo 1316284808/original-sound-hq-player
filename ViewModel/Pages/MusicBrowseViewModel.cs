@@ -31,18 +31,21 @@ namespace WinUIMusicPlayer.ViewModel
     {
         public WebDavSourcesViewModel RemoteSources => App.Services.GetRequiredService<WebDavSourcesViewModel>();
 
-        public SelectorBarItem SelectedPage
+        /// <summary>当前子页 tag（song/album/artist/folder/favourite），由侧边导航、启动恢复与交叉链接统一驱动。</summary>
+        public string SelectedPageTag
         {
             get => field;
             set
             {
-                if (value is null) return;
+                if (string.IsNullOrEmpty(value) || field == value) return;
                 if (SetProperty(ref field, value))
                 {
                     OnSelectionChanged();
                 }
             }
         }
+        // 子页固定顺序：与原顶部 SelectorBar 项一致，用于滑动过渡方向判断。
+        private static readonly string[] SubPageOrder = ["song", "album", "artist", "folder", "favourite"];
         public int PreviousSelectedIndex { get; set; } = 0;
         public BassPlayerCommandService MusicPlaybackService { get; set; }
         private SystemMediaControlsService SystemMediaControlsService { get; set; }
@@ -131,7 +134,7 @@ namespace WinUIMusicPlayer.ViewModel
 
         private bool CanStartFolderScan => !App.Services.GetRequiredService<AddFolderViewModel>().IsScanning;
 
-        // 与 AddFolderPage 添加按钮同步：IsScanning 翻转时刷新占位按钮可用态
+        // 与音乐库页来源管理同步：IsScanning 翻转时刷新占位按钮可用态
         private AddFolderViewModel? _addFolderVm;
         private void WireAddFolderScanGuard()
         {
@@ -222,35 +225,35 @@ namespace WinUIMusicPlayer.ViewModel
 
         private void OnSelectionChanged()
         {
-            int currentSelectedIndex = GetSelectorBarItemIndex(SelectedPage);
+            int currentSelectedIndex = Array.IndexOf(SubPageOrder, SelectedPageTag);
 
-            // 各 tab 的 detail 状态(CurrentXxxObj)在切换时保留,切回时由
+            // 各子页的 detail 状态(CurrentXxxObj)在切换时保留,切回时由
             // ReceiveNavigation/RefreshFromAppState 按 PageType 恢复;退出详情
             // 由各页返回按钮(CollapseDetail)显式清空。
 
             AppData.CurrentPage = typeof(SongListPage);
-            switch (SelectedPage.Name)
+            switch (SelectedPageTag)
             {
-                case "Song":
+                case "song":
                     AppViewModel.PageType = "song";
                     AppData.CurrentPage = typeof(SongListPage);
                     break;
-                case "Album":
+                case "album":
                     AppData.CurrentPage = typeof(AlbumPage);
                     AppViewModel.PageType = AppViewModel.CurrentAlbumObj is { } a && !string.IsNullOrEmpty(a.Album)
                         ? "album" : "albumBrowse";
                     break;
-                case "Artist":
+                case "artist":
                     AppData.CurrentPage = typeof(ArtistPage);
                     AppViewModel.PageType = AppViewModel.CurrentArtistObj is { } ar && !string.IsNullOrEmpty(ar.Author)
                         ? "artist" : "artistBrowse";
                     break;
-                case "Folder":
+                case "folder":
                     AppData.CurrentPage = typeof(FolderBrowsePage);
                     AppViewModel.PageType = AppViewModel.CurrentFolderObj is { } f && !string.IsNullOrEmpty(f.LastLevelFolderPath)
                         ? "folder" : "folderBrowse";
                     break;
-                case "Favourite":
+                case "favourite":
                     AppViewModel.PageType = "favourite";
                     AppData.CurrentPage = typeof(FavouritePlayListPage);
                     break;
@@ -259,6 +262,34 @@ namespace WinUIMusicPlayer.ViewModel
             var slideNavigationTransitionEffect = currentSelectedIndex - PreviousSelectedIndex > 0 ? SlideNavigationTransitionEffect.FromRight : SlideNavigationTransitionEffect.FromLeft;
             MusicBrowsePage?.NavigatePage(AppData.CurrentPage, null, new SlideNavigationTransitionInfo() { Effect = slideNavigationTransitionEffect });
             PreviousSelectedIndex = currentSelectedIndex;
+            // 同步侧边导航选中项（song/album/artist 对应导航项；folder/favourite 归音乐库）
+            MainPage?.SyncNavigationSelection(SelectedPageTag);
+        }
+
+        // 全部播放：顺序队列替换为当前歌曲库，从第一首开始（与歌单/详情页 PlayAll 同一队列语义）。
+        [RelayCommand]
+        private async Task PlayAllAsync()
+        {
+            if (!AppViewModel.CanStartPlayback) return;
+            var songs = AppViewModel.SongsSource;
+            if (songs.Count == 0) return;
+            AppViewModel.SequentialPlayingList = new BulkObservableCollection<Music>(songs);
+            await PlayMusic(music: songs[0], IsChangeList: true);
+        }
+
+        // 随机播放：先切换到随机模式再替换队列（随机模式下队列替换自动洗牌），从洗牌后的第一首开始。
+        [RelayCommand]
+        private async Task ShufflePlayAsync()
+        {
+            if (!AppViewModel.CanStartPlayback) return;
+            var songs = AppViewModel.SongsSource;
+            if (songs.Count == 0) return;
+            AppViewModel.CurrentPlayMode = PlayMode.RandomLoop;
+            MusicPlaybackService.UpdateSettings();
+            AppViewModel.SequentialPlayingList = new BulkObservableCollection<Music>(songs);
+            var playing = AppViewModel.CurrentPlayingList;
+            if (playing.Count == 0) return;
+            await PlayMusic(music: playing[0], IsChangeList: true);
         }
 
         public Task PlayMusic(Music music, TimeSpan currentPos = new TimeSpan(), bool isSettingChanged = false, bool IsChangeList = false)
@@ -387,20 +418,6 @@ namespace WinUIMusicPlayer.ViewModel
         public void UpdateViewList()
         {
             MusicBrowsePage?.UpdateViewList();
-        }
-
-        private int GetSelectorBarItemIndex(SelectorBarItem item)
-        {
-            if (item is null) return -1;
-            return item.Name switch
-            {
-                "Song" => 0,
-                "Album" => 1,
-                "Artist" => 2,
-                "Folder" => 3,
-                "Favourite" => 4,
-                _ => -1
-            };
         }
     }
 }

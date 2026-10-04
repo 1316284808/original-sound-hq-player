@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <Application
     x:Class="WinUIMusicPlayer.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -23,8 +23,106 @@
                 </ResourceDictionary>
                 <!--  Other merged dictionaries here  -->
             </ResourceDictionary.MergedDictionaries>
+
             <x:Double x:Key="ContentDialogMaxWidth">1200</x:Double>
             <x:Double x:Key="ContentDialogMaxHeight">900</x:Double>
+
+            <!-- 全局基础按钮样式（隐式，无 x:Key）：对所有 Button 自动生效并保留默认模板；
+                 显式指定 Style 的具名样式（如 SimpleHoverButtonStyle/PlayButtonStyle 等）不受影响。 -->
+            <Style TargetType="Button">
+                <Setter Property="Margin" Value="5"/>
+                <Setter Property="MinHeight" Value="35"/>
+                <Setter Property="MinWidth" Value="40"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+            </Style>
+
+            <!--  音乐库卡片：本地文件夹与 WebDAV 来源共用同一套容器描边与分组小标题排版  -->
+            <Style x:Key="LibraryCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
+
+            <Style x:Key="LibraryGroupTitleStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+
+            <!--  歌曲行（MusicListRowControl）共用的 ListViewItem 容器样式：
+                  悬浮/选中底色沿用 SongListPage 原来的白色叠加（悬浮 30% / 选中 50%），
+                  替换默认的 ListViewItemBackground* 主题画刷，使四处歌曲列表强调色一致；
+                  这是固定白色叠加，浅色主题下对比很弱，需要调整只改模板里这几处即可全局生效。
+                  歌单详情 / 歌手专辑详情 / 最爱 三处列表各自定义时只保留右键菜单，避免行高与圆角各自漂移。
+                  纵向 Padding 5 + 行 MinHeight 50 = 60，与 SongListPage 的行高一致。  -->
+            <Style
+                x:Key="MusicRowListViewItemStyle"
+                BasedOn="{StaticResource DefaultListViewItemStyle}"
+                TargetType="ListViewItem">
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                <Setter Property="Padding" Value="16,5,12,5" />
+                <!-- WinUI 3 默认模板未将 CornerRadius 经 TemplateBinding 暴露给 ListViewItemPresenter，
+                     仅设 CornerRadius 属性对选中/悬停背景无效；此处重写模板显式绑定，使选中与悬停高亮圆角化，
+                     同时完整保留多选勾选框、拖拽/重排、按下/焦点等原生视觉。 -->
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListViewItem">
+                            <ListViewItemPresenter
+                                x:Name="Root"
+                                CornerRadius="{TemplateBinding CornerRadius}"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                ContentTransitions="{TemplateBinding ContentTransitions}"
+                                Control.IsTemplateFocusTarget="True"
+                                FocusVisualMargin="{TemplateBinding FocusVisualMargin}"
+                                FocusVisualPrimaryBrush="{TemplateBinding FocusVisualPrimaryBrush}"
+                                FocusVisualPrimaryThickness="{TemplateBinding FocusVisualPrimaryThickness}"
+                                FocusVisualSecondaryBrush="{TemplateBinding FocusVisualSecondaryBrush}"
+                                FocusVisualSecondaryThickness="{TemplateBinding FocusVisualSecondaryThickness}"
+                                SelectionCheckMarkVisualEnabled="{ThemeResource ListViewItemSelectionCheckMarkVisualEnabled}"
+                                CheckBrush="{ThemeResource ListViewItemCheckBrush}"
+                                CheckBoxBrush="{ThemeResource ListViewItemCheckBoxBrush}"
+                                CheckMode="{ThemeResource ListViewItemCheckMode}"
+                                ContentMargin="{TemplateBinding Padding}"
+                                PlaceholderBackground="{ThemeResource ListViewItemPlaceholderBackground}"
+                                DragBackground="{ThemeResource ListViewItemDragBackground}"
+                                DragForeground="{ThemeResource ListViewItemDragForeground}"
+                                DragOpacity="{ThemeResource ListViewItemDragThemeOpacity}"
+                                ReorderHintOffset="{ThemeResource ListViewItemReorderHintThemeOffset}"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                PointerOverBackground="#4DFFFFFF"
+                                PointerOverForeground="{ThemeResource ListViewItemForegroundPointerOver}"
+                                PressedBackground="{ThemeResource ListViewItemBackgroundPressed}"
+                                SelectedBackground="#80FFFFFF"
+                                SelectedForeground="{ThemeResource ListViewItemForegroundSelected}"
+                                SelectedPointerOverBackground="#80FFFFFF"
+                                SelectedPressedBackground="#80FFFFFF"
+                                DisabledOpacity="{ThemeResource ListViewItemDisabledThemeOpacity}"
+                                FocusBorderBrush="{ThemeResource ListViewItemFocusBorderBrush}"
+                                FocusSecondaryBorderBrush="{ThemeResource ListViewItemFocusSecondaryBorderBrush}" />
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!--  卡片内的小号圆形操作按钮（新增/扫描/更多等）  -->
+            <Style
+                x:Key="LibraryCardActionButtonStyle"
+                BasedOn="{StaticResource SubtleButtonStyle}"
+                TargetType="Button">
+                <Setter Property="Width" Value="34" />
+                <Setter Property="Height" Value="34" />
+                <Setter Property="Padding" Value="0" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

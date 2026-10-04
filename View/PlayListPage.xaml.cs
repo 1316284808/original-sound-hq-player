@@ -52,24 +52,6 @@ namespace WinUIMusicPlayer.View
             UpdateState();
         }
 
-        private void OnCoverPointerEntered(object sender, PointerRoutedEventArgs e)
-        {
-            if (sender is not Grid grid) return;
-            SetActionButtonsVisibility(grid, Visibility.Visible);
-        }
-
-        private void OnCoverPointerExited(object sender, PointerRoutedEventArgs e)
-        {
-            if (sender is not Grid grid) return;
-            SetActionButtonsVisibility(grid, Visibility.Collapsed);
-        }
-
-        private static void SetActionButtonsVisibility(Grid grid, Visibility visibility)
-        {
-            if (grid.FindName("PlayBtn") is Button playBtn) playBtn.Visibility = visibility;
-            if (grid.FindName("MoreBtn") is Button moreBtn) moreBtn.Visibility = visibility;
-        }
-
         private void PlayListGridView_ItemClick(object sender, ItemClickEventArgs e)
         {
             if (DetailView.ViewModel.IsClosingForTransition) return;
@@ -101,66 +83,20 @@ namespace WinUIMusicPlayer.View
             e.Handled = true;
         }
 
-        public void CollapseDetail()
+        /// <summary>
+        /// 返回音乐库页：歌单列表只在音乐库页呈现，这里直接退出详情模式并随导航离开本页。
+        /// 不做返回动画——源卡片所在的网格会一起卸载（MainPage.NavigateTo 会清空后退栈，停留在本页将无路可退）。
+        /// </summary>
+        public void LeaveDetailForLibrary()
         {
             if (!ViewModel.IsInDetailMode) return;
-            var playList = ViewModel.AppViewModel.CurrentPlayList;
-            var detailBorder = DetailView.DetailCoverBorder;
-
-            Border? sourceBorder = null;
-            if (playList is not null)
+            DetailView.ViewModel.IsClosingForTransition = true;
+            if (ViewModel.AppViewModel.CurrentPlayList is not null)
             {
-                var item = PlayListGridView.ContainerFromItem(playList)?.As<GridViewItem>();
-                sourceBorder = FindCoverBorderInItem(item);
+                ViewModel.AppViewModel.CurrentPlayList = null;
             }
-            bool canAnimate = detailBorder is not null && sourceBorder is not null;
-
-            if (canAnimate)
-            {
-                ConnectedAnimationService.GetForCurrentView()
-                    .PrepareToAnimate("PlaylistCover", detailBorder);
-            }
-            SetExitTransitions();
-
-            if (canAnimate)
-            {
-                DetailView.ViewModel.IsClosingForTransition = true;
-                if (ViewModel.AppViewModel.CurrentPlayList is not null)
-                {
-                    ViewModel.AppViewModel.CurrentPlayList = null;
-                }
-                ViewModel.IsInDetailMode = false;
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    var anim = ConnectedAnimationService.GetForCurrentView().GetAnimation("PlaylistCover");
-                    if (anim != null)
-                    {
-                        anim.Completed += (s, e) =>
-                        {
-                            DetailView.ViewModel.IsClosingForTransition = false;
-                            DetailView.ViewModel.RefreshFromAppState();
-                        };
-                        if (!anim.TryStart(sourceBorder))
-                        {
-                            DetailView.ViewModel.IsClosingForTransition = false;
-                            DetailView.ViewModel.RefreshFromAppState();
-                        }
-                    }
-                    else
-                    {
-                        DetailView.ViewModel.IsClosingForTransition = false;
-                        DetailView.ViewModel.RefreshFromAppState();
-                    }
-                });
-            }
-            else
-            {
-                if (ViewModel.AppViewModel.CurrentPlayList is not null)
-                {
-                    ViewModel.AppViewModel.CurrentPlayList = null;
-                }
-                ViewModel.IsInDetailMode = false;
-            }
+            ViewModel.IsInDetailMode = false;
+            DetailView.ViewModel.IsClosingForTransition = false;
         }
 
         public void RefreshDetailView() { }
@@ -189,44 +125,6 @@ namespace WinUIMusicPlayer.View
         {
             DetailView.OpacityTransition = TransitionCache.Slow;
             PlayListGrid.OpacityTransition = TransitionCache.Fast;
-        }
-
-        private void SetExitTransitions()
-        {
-            DetailView.OpacityTransition = TransitionCache.Fast;
-            PlayListGrid.OpacityTransition = TransitionCache.Slow;
-        }
-
-        private void PlayPlayList_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button button && button.Tag is PlayList playList)
-            {
-                _ = ViewModel.PlayPlayList(playList);
-            }
-        }
-
-        private async void RemovePlayListButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is not MenuFlyoutItem item || item.Tag is not PlayList playList) return;
-            if (await DialogHelper.ShowConfirmAsync(this.XamlRoot, "AreUSureDeletePlayList"))
-            {
-                await ViewModel.RemovePlayList(playList);
-            }
-        }
-
-        private void EditPlayListNameButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is not MenuFlyoutItem item || item.Tag is not PlayList playList) return;
-            _ = ViewModel.AppViewModel.EditPlayListName(playList, () =>
-                DialogHelper.ShowInputAsync(this.XamlRoot, "ModifyPlaylist", playList.Name));
-        }
-
-        private void ExportPlayList_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is MenuFlyoutItem item && item.Tag is PlayList playList)
-            {
-                _ = ViewModel.ExportPlayList(playList);
-            }
         }
 
         private async void AddPlayList_Click(object sender, RoutedEventArgs e)

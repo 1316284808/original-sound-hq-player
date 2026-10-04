@@ -129,21 +129,12 @@ public sealed class HotKeyService(AppState state, MusicDatabaseService database,
             desktopLyrics.IsEnabled = !desktopLyrics.IsEnabled;
         });
 
-        GlobalHotKeyHook.UpdateHotKey(window, ShortcutId.ToggleDesktopLyricsLock, state.HotKeys.ToggleDesktopLyricsLockShortcut, () =>
-        {
-            if (_disposed || !state.Lifecycle.IsReady) return;
-            var desktopLyrics = App.Services.GetRequiredService<DesktopLyricsViewModel>();
-            desktopLyrics.IsLocked = !desktopLyrics.IsLocked;
-        });
-
         GlobalHotKeyHook.UpdateHotKey(window, ShortcutId.ToggleDesktopLyricsKaraoke, state.HotKeys.ToggleDesktopLyricsKaraokeShortcut, () =>
         {
             if (_disposed || !state.Lifecycle.IsReady) return;
             var desktopLyrics = App.Services.GetRequiredService<DesktopLyricsViewModel>();
             desktopLyrics.IsKaraokeEnabled = !desktopLyrics.IsKaraokeEnabled;
         });
-
-        GlobalHotKeyHook.UpdateHotKey(window, ShortcutId.ResetDesktopLyrics, state.HotKeys.ResetDesktopLyricsShortcut, () => { if (!_disposed && state.Lifecycle.IsReady) DesktopLyricsManager.ResetWindowBounds(); });
     }
 
 

@@ -329,9 +329,7 @@ namespace WinUIMusicPlayer.ViewModel
         public List<string> ShowWindowShortcut { get => State.HotKeys.ShowWindowShortcut; set => State.HotKeys.ShowWindowShortcut = value; }
         public List<string> ToggleFullScreenShortcut { get => State.HotKeys.ToggleFullScreenShortcut; set => State.HotKeys.ToggleFullScreenShortcut = value; }
         public List<string> ToggleDesktopLyricsShortcut { get => State.HotKeys.ToggleDesktopLyricsShortcut; set => State.HotKeys.ToggleDesktopLyricsShortcut = value; }
-        public List<string> ToggleDesktopLyricsLockShortcut { get => State.HotKeys.ToggleDesktopLyricsLockShortcut; set => State.HotKeys.ToggleDesktopLyricsLockShortcut = value; }
         public List<string> ToggleDesktopLyricsKaraokeShortcut { get => State.HotKeys.ToggleDesktopLyricsKaraokeShortcut; set => State.HotKeys.ToggleDesktopLyricsKaraokeShortcut = value; }
-        public List<string> ResetDesktopLyricsShortcut { get => State.HotKeys.ResetDesktopLyricsShortcut; set => State.HotKeys.ResetDesktopLyricsShortcut = value; }
         public void InitHotKeys() => App.Services.GetRequiredService<HotKeyService>().Refresh();
 
         public List<double> TargetFrameRateOptions { get; } = [60, 72, 80, 90, 120, 144, 160, 165, 180, 240, 280, 320, 360, 480];
@@ -353,6 +351,7 @@ namespace WinUIMusicPlayer.ViewModel
 
         public IRelayCommand<string> BackdropTypeChangedCommand => App.Services.GetRequiredService<SettingsActions>().BackdropTypeChangedCommand;
         public IRelayCommand<string> ThemeTypeChangedCommand => App.Services.GetRequiredService<SettingsActions>().ThemeTypeChangedCommand;
+        public IRelayCommand ToggleThemeCommand => App.Services.GetRequiredService<SettingsActions>().ToggleThemeCommand;
         public IAsyncRelayCommand OpenLogPathCommand => App.Services.GetRequiredService<SettingsActions>().OpenLogPathCommand;
         public IAsyncRelayCommand OpenSettingsFolderCommand => App.Services.GetRequiredService<SettingsActions>().OpenSettingsFolderCommand;
         public IAsyncRelayCommand ChangeCoverCacheLocationCommand => App.Services.GetRequiredService<SettingsActions>().ChangeCoverCacheLocationCommand;

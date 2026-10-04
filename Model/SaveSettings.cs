@@ -31,7 +31,7 @@ namespace WinUIMusicPlayer.Model
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? DeviceFriendlyName { get; set; }
         [JsonPropertyName("DefualtEntry")]
-        public string DefaultEntry { get; set; } = "AddFolder";
+        public string DefaultEntry { get; set; } = "AllSongs";
         [JsonPropertyName("DefualtPlayList")]
         public string DefaultPlayList { get; set; } = "song";
         public string AppStyle { get; set; } = "TransparentAcrylic";
@@ -108,16 +108,13 @@ namespace WinUIMusicPlayer.Model
         public List<string> ShowWindowShortcut { get; set; } = new List<string> { "Ctrl", "Alt", "W" };
         public List<string> ToggleFullScreenShortcut { get; set; } = new List<string> { "Ctrl", "Alt", "F" };
         public List<string> ToggleDesktopLyricsShortcut { get; set; } = new List<string> { "Ctrl", "Alt", "D" };
-        public List<string> ToggleDesktopLyricsLockShortcut { get; set; } = new List<string> { "Ctrl", "Alt", "L" };
         public List<string> ToggleDesktopLyricsKaraokeShortcut { get; set; } = new List<string> { "Ctrl", "Alt", "K" };
-        public List<string> ResetDesktopLyricsShortcut { get; set; } = new List<string> { "Ctrl", "Alt", "R" };
         public bool EnableGlobalHotKey { get; set; } = false;
         public bool IsTrimOnHideEnabled { get; set; } = false;
         public bool IsTrimAfterPlaybackEnabled { get; set; } = false;
         public string ArtistSplitSymbols { get; set; } = ", ; / 、 & feat. :";
         public bool AutoHideDesktopLyricsOnPlayingDetail { get; set; } = false;
         public bool IsDesktopLyricsEnabled { get; set; } = false;
-        public bool IsDesktopLyricsLocked { get; set; } = false;
         public bool IsDesktopLyricsKaraokeEnabled { get; set; } = true;
         public double DesktopLyricsFontSize { get; set; } = 36;
         public string DesktopLyricsFontFamily { get; set; } = "Segoe UI";
