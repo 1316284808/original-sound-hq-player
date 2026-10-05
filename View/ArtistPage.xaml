@@ -29,6 +29,7 @@
                     SelectionMode="None">
                     <GridView.ItemContainerStyle>
                         <Style BasedOn="{StaticResource DefaultGridViewItemStyle}" TargetType="GridViewItem">
+                            <Setter Property="CornerRadius" Value="60" />
                             <Setter Property="ContextFlyout">
                                 <Setter.Value>
                                     <MenuFlyout extensions:MenuFlyoutExtensions.PrepareCommand="{x:Bind ViewModel.PrepareMenuCommand}" extensions:MenuFlyoutExtensions.ItemsSource="{x:Bind ViewModel.ArtistMenuOptions, Mode=OneWay}" />

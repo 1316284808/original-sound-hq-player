@@ -101,6 +101,7 @@
                         Loaded="ProgressSliderPlayingDetail_Loaded"
                         Maximum="{x:Bind ViewModel.AppViewModel.ProgressSliderMax, Mode=TwoWay}"
                         Minimum="0"
+                        Margin="0,4,0,0"
                         PointerEntered="ProgressSlider_PointerEntered"
                         PointerExited="ProgressSlider_PointerExited"
                         Style="{StaticResource PlaybackSliderStyle}"
@@ -113,20 +114,16 @@
                     ColumnDefinitions="*,Auto,*">
                     <StackPanel
                         Grid.Column="0"
-                        Margin="10,2"
                         Orientation="Horizontal">
                         <Button BorderBrush="Transparent" BorderThickness="1"
                             x:Name="MusicInfoButtonPlayingDetail"
+                            MaxWidth="240"  Margin="6,0,0,0"
                             HorizontalAlignment="Left"
                             VerticalAlignment="Center"
                             Background="Transparent"
-                           
                             Click="MusicInfoButtonPlayingDetail_Click"
                             Style="{StaticResource MenuButtonStyle}">
-                            <Grid
-                                 Width="240"
-                                 Height="60"
-                                Padding="5,2"
+                            <Grid 
                                 RowDefinitions="Auto,Auto,Auto">
                                 <TextBlock
                                     Grid.Row="0"

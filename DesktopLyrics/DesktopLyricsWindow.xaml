@@ -34,9 +34,8 @@
             x:Name="RendererHost"
              Background="Transparent"
             Grid.Column="0"
-           Width="auto"
-            HorizontalAlignment="Left"
-            VerticalAlignment="Center" />
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch" />
 
         <StackPanel
             x:Name="ControlPanel"

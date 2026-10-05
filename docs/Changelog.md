@@ -2,6 +2,10 @@
 
 新条目加在最上方。
 
+## 2026-10-05 任务栏歌词：修复开启逐字歌词后歌词不显示
+
+- `DesktopLyrics/DesktopLyricsWindow.xaml`：`RendererHost` 的 `ContentPresenter` 由 `Width="auto" HorizontalAlignment="Left" VerticalAlignment="Center"` 改回 `HorizontalAlignment="Stretch" VerticalAlignment="Stretch"`。`CanvasLyricsRenderer` 的内容是 `CanvasAnimatedControl`，无固有尺寸；在 `Width="auto"`+`Left/Center` 下 `ContentPresenter` 被压成 0×0，导致 `RebuildLine` 因 `width < 60` 提前返回而不绘制（文本渲染器因 `TextBlock` 有固有尺寸仍正常）。逐字渲染依赖满尺寸画布，故开启逐字后整行歌词消失。
+
 ## 2026-10-04 任务栏歌词：去掉系统阴影/圆角/细边框，按钮与尺寸微调
 
 - `Helper/WindowHelper.cs`：新增 `RemoveWindowDecoration(hwnd)`，经 `DwmSetWindowAttribute` 关闭非客户区渲染（去掉 DWM 系统投影）、设 `DWMWA_WINDOW_CORNER_PREFERENCE=Donotround`、`DWMWA_BORDER_COLOR=None`，去除 Win11 默认圆角与 1px 细边框。

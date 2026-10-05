@@ -96,14 +96,7 @@
                                 <TextBlock x:Uid="AllSongs" />
                             </NavigationViewItem.Content>
                         </NavigationViewItem>
-                        <NavigationViewItem Tag="MusicLibrary">
-                            <NavigationViewItem.Icon>
-                                <FontIcon helper:IconGlyph.IconKind="LibraryOutline" />
-                            </NavigationViewItem.Icon>
-                            <NavigationViewItem.Content>
-                                <TextBlock x:Uid="MusicLibrary" />
-                            </NavigationViewItem.Content>
-                        </NavigationViewItem>
+                      
                         <NavigationViewItem Tag="ArtistList">
                             <NavigationViewItem.Icon>
                                 <FontIcon helper:IconGlyph.IconKind="ArtistOutline" />
@@ -118,6 +111,14 @@
                             </NavigationViewItem.Icon>
                             <NavigationViewItem.Content>
                                 <TextBlock x:Uid="AlbumList" />
+                            </NavigationViewItem.Content>
+                        </NavigationViewItem>
+                        <NavigationViewItem Tag="MusicLibrary">
+                            <NavigationViewItem.Icon>
+                                <FontIcon helper:IconGlyph.IconKind="LibraryOutline" />
+                            </NavigationViewItem.Icon>
+                            <NavigationViewItem.Content>
+                                <TextBlock x:Uid="MusicLibrary" />
                             </NavigationViewItem.Content>
                         </NavigationViewItem>
                         <NavigationViewItem Tag="Stats">
@@ -222,7 +223,7 @@
                                     Opacity="0" />
                             </Grid>
                         </Button>
-                        <Grid
+                        <Grid 
                             Grid.Column="1"
                             MaxWidth="240"
                             Margin="6,0,0,0"
@@ -246,11 +247,10 @@
                             </dev:AutoScrollView>
                             <Button
                                 x:Name="MusicAlbumButton"
-                                Grid.Row="1"
-                                Padding="2,0"  MinHeight="0"
-                                VerticalAlignment="Center"
+                                Grid.Row="1"  MinHeight="0" Height="auto"
+                              VerticalAlignment="Center" CornerRadius="2"
                                 Background="Transparent"
-                                BorderThickness="0"
+                                 Margin="0,1" Padding="0" HorizontalContentAlignment="Left"
                                 Command="{x:Bind ViewModel.MusicBrowseVM.AlbumButtonCommand, Mode=OneWay}"
                                 CommandParameter="{x:Bind ViewModel.AppViewModel.CurrentPlayingMusic.Album, Mode=OneWay}"
                                 IsEnabled="{x:Bind tools:BindUtils.IsCurrentMusicExist(ViewModel.AppViewModel.CurrentPlayingMusic), Mode=OneWay}">
@@ -269,11 +269,11 @@
                             </Button>
                             <Button
                                 x:Name="MusicAuthorButton"
-                                Grid.Row="2"
-                                Padding="2,0"  MinHeight="0"
+                                Grid.Row="2" CornerRadius="2"
                                 VerticalAlignment="Center"
                                 Background="Transparent"
-                                BorderThickness="0"
+                                Margin="0,1" Padding="1,0" MinHeight="0" Height="auto"
+                                HorizontalContentAlignment="Left"
                                 Command="{x:Bind ViewModel.MusicBrowseVM.ArtistButtonCommand, Mode=OneWay}"
                                 CommandParameter="{x:Bind ViewModel.AppViewModel.CurrentPlayingMusic.Author, Mode=OneWay}"
                                 IsEnabled="{x:Bind tools:BindUtils.IsCurrentMusicExist(ViewModel.AppViewModel.CurrentPlayingMusic), Mode=OneWay}">
