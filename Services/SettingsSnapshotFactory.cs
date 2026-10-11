@@ -99,6 +99,8 @@ public sealed class SettingsSnapshotFactory(AppState state)
         newSettings.DesktopLyricsShadowAmount = AppSettings.DesktopLyricsShadowAmount;
         newSettings.DesktopLyricsFontWeight = AppSettings.DesktopLyricsFontWeight;
         newSettings.LyricsFontWeight = AppSettings.LyricsFontWeight;
+        newSettings.DesktopLyricsPositionX = AppSettings.DesktopLyricsPositionX;
+        newSettings.DesktopLyricsPositionY = AppSettings.DesktopLyricsPositionY;
         newSettings.IsMusicInfoVisible = state.Preferences.IsMusicInfoVisible;
         return newSettings;
     }

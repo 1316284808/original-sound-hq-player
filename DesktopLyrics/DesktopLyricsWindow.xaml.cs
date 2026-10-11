@@ -71,6 +71,11 @@ namespace WinUIMusicPlayer.DesktopLyrics
         private DispatcherQueueTimer? _dockTimer;    // 750ms：贴靠刷新 + 重申置顶 + 自动隐藏同步
         private bool _disposed;
         private bool _isOverlayVisible = true;
+        private bool _userMoved;                // 用户拖动过 → 自由停靠，不再自动贴任务栏
+        private bool _isDragging;               // 拖动手势进行中
+        private WindowHelper.POINT _dragStartCursor;
+        private PointInt32 _dragStartWindowPos;
+        private DispatcherQueueTimer? _dragTimer;   // 拖动手势期间的快速轮询（~16ms）
 
         private IntPtr _lastTaskbarHwnd;            // 上次贴靠的任务栏（HWND 变化 = explorer 重启）
         private WindowHelper.RECT _lastTaskbarRect; // 上次贴靠的任务栏矩形，变化才重新定位
@@ -96,7 +101,10 @@ namespace WinUIMusicPlayer.DesktopLyrics
 
             // 贴靠任务栏：先立窗口样式（无边框/穿透/置顶）再定位，最后起 750ms 刷新节拍
             ApplyOverlayStyle();
-            DockToTaskbar();
+            // 用户曾拖动过 → 恢复其自由停靠位置；否则默认贴任务栏
+            _userMoved = AppSettings.DesktopLyricsPositionX != AppSettings.DesktopLyricsInvalidPosition
+                         && AppSettings.DesktopLyricsPositionY != AppSettings.DesktopLyricsInvalidPosition;
+            PositionOrDock();
             StartDockTimer();
             StartCursorPolling();
 
@@ -141,7 +149,7 @@ namespace WinUIMusicPlayer.DesktopLyrics
             _renderer?.SetSuspended(false);
             WindowHelper.RestoreOverlay(_hwnd);
             ApplyOverlayStyle();
-            DockToTaskbar();
+            PositionOrDock();
             StartDockTimer();
             UpdateAdaptiveColorMode();
         }
@@ -365,6 +373,24 @@ namespace WinUIMusicPlayer.DesktopLyrics
             KeepAboveTaskbar();
         }
 
+        /// <summary>
+        /// 统一入口：用户拖动过则回到其自由停靠位置（持久化），否则贴靠任务栏。
+        /// 取代散落的 <see cref="DockToTaskbar"/> 调用，使「自由停靠」与「贴任务栏」两态共用一处定位逻辑。
+        /// </summary>
+        private void PositionOrDock()
+        {
+            if (_userMoved)
+            {
+                WindowSizeHelper.MoveAndResizeExact(
+                    AppWindow, AppSettings.DesktopLyricsPositionX, AppSettings.DesktopLyricsPositionY, FixedWidth, BarHeight);
+                InvalidatePanelScreenRect();
+            }
+            else
+            {
+                DockToTaskbar();
+            }
+        }
+
         /// <summary>重申置顶（不动位置/尺寸/焦点）：任务栏是特殊的 topmost band 窗口，单次设置不足以保证层级。</summary>
         private void KeepAboveTaskbar() => WindowHelper.KeepTopmost(_hwnd);
 
@@ -411,7 +437,15 @@ namespace WinUIMusicPlayer.DesktopLyrics
                   || info.Width != _lastTaskbarRect.Width
                   || info.Height != _lastTaskbarRect.Height;
 
-            if (geometryChanged || !WindowHelper.IsWindowVisible(_hwnd) || WindowHelper.IsIconic(_hwnd))
+            // 自愈优先：被前后台切换偶发置为不可见/最小化时，无论贴任务栏还是自由停靠都拉回并重申置顶
+            if (!WindowHelper.IsWindowVisible(_hwnd) || WindowHelper.IsIconic(_hwnd))
+            {
+                WindowHelper.RestoreOverlay(_hwnd);
+                KeepAboveTaskbar();
+                return;
+            }
+            // 用户拖动过 → 自由停靠：任务栏几何变化不再夺回位置，仅重申置顶
+            if (geometryChanged && !_userMoved)
             {
                 DockToTaskbar();
                 return;
@@ -436,7 +470,7 @@ namespace WinUIMusicPlayer.DesktopLyrics
             LyricsSyncRequestBus.Request();
             _renderer?.SetSuspended(false);
             WindowHelper.RestoreOverlay(_hwnd);
-            DockToTaskbar();
+            PositionOrDock();
             StartCursorPolling();
             UpdateAdaptiveColorMode();
             // 切样式会写入 WS_VISIBLE；若期间用户已从托盘关闭歌词，隐藏优先
@@ -460,6 +494,7 @@ namespace WinUIMusicPlayer.DesktopLyrics
 
         private void StartHoverTimer()
         {
+            if (_isDragging) return;   // 拖动手势进行中，悬停轮询不介入
             if (_hoverTimer is null)
             {
                 _hoverTimer = DispatcherQueue.CreateTimer();
@@ -512,12 +547,19 @@ namespace WinUIMusicPlayer.DesktopLyrics
 
         private void OnHoverTimerTick(DispatcherQueueTimer sender, object args)
         {
+            if (_isDragging) return;
             // 离开窗口：恢复穿透、停快轮询，回到慢速自愈轮询
             if (!_isOverlayVisible || !WindowHelper.GetCursorPos(out WindowHelper.POINT cursor) || !IsCursorOverWindow(cursor))
             {
                 sender.Stop();
                 _cursorOverPanel = false;
                 ApplyClickThrough(true);
+                return;
+            }
+            // 歌词区（非按钮）按住左键 → 进入拖动手势（窗口点击穿透期间也能响应，靠轮询检测）
+            if (WindowHelper.IsLeftButtonDown() && !IsCursorOverControlPanel(cursor))
+            {
+                StartDrag();
                 return;
             }
             // 光标移到按钮上 = 临时取消穿透供点击；离开按钮立即恢复穿透
@@ -536,6 +578,64 @@ namespace WinUIMusicPlayer.DesktopLyrics
             SizeInt32 size = AppWindow.Size;
             return cursor.X >= pos.X && cursor.X < pos.X + size.Width
                 && cursor.Y >= pos.Y && cursor.Y < pos.Y + size.Height;
+        }
+
+        // ==== 拖动（点击穿透窗口也能拖动：靠轮询检测左键，全程跟随光标移动窗口） ====
+
+        /// <summary>进入拖动手势：取消点击穿透以便接收后续光标采样，记录起点，切换至快速拖动轮询。</summary>
+        private void StartDrag()
+        {
+            _isDragging = true;
+            _userMoved = true;   // 一旦手动拖动即转为自由停靠，不再被自动贴任务栏夺回位置
+            StopHoverTimer();
+            WindowHelper.GetCursorPos(out _dragStartCursor);
+            _dragStartWindowPos = AppWindow.Position;
+            ApplyClickThrough(false);
+            StartDragTimer();
+        }
+
+        private void StartDragTimer()
+        {
+            if (_dragTimer is null)
+            {
+                _dragTimer = DispatcherQueue.CreateTimer();
+                _dragTimer.Interval = TimeSpan.FromMilliseconds(16);
+                _dragTimer.Tick += OnDragTimerTick;
+            }
+            _dragTimer.Start();
+        }
+
+        private void StopDragTimer() => _dragTimer?.Stop();
+
+        /// <summary>拖动轮询：左键仍按住则跟随光标移动窗口；松开则结束手势并落盘位置。</summary>
+        private void OnDragTimerTick(DispatcherQueueTimer sender, object args)
+        {
+            if (!_isDragging || !_isOverlayVisible)
+            {
+                StopDragTimer();
+                return;
+            }
+            if (!WindowHelper.GetCursorPos(out WindowHelper.POINT cursor) || !WindowHelper.IsLeftButtonDown())
+            {
+                EndDrag();
+                return;
+            }
+            int dx = cursor.X - _dragStartCursor.X;
+            int dy = cursor.Y - _dragStartCursor.Y;
+            WindowSizeHelper.MoveAndResizeExact(
+                AppWindow, _dragStartWindowPos.X + dx, _dragStartWindowPos.Y + dy, FixedWidth, BarHeight);
+            InvalidatePanelScreenRect();
+        }
+
+        /// <summary>结束拖动：恢复点击穿透、停拖动轮询、保存自由停靠位置并恢复常规轮询。</summary>
+        private void EndDrag()
+        {
+            _isDragging = false;
+            StopDragTimer();
+            ApplyClickThrough(true);
+            ViewModel.SaveWindowPosition(AppWindow.Position.X, AppWindow.Position.Y);
+            StartHoverTimer();
+            StartIdleTimer();
         }
 
         /// <summary>
@@ -623,6 +723,7 @@ namespace WinUIMusicPlayer.DesktopLyrics
             StopHoverTimer();
             StopIdleTimer();
             StopDockTimer();
+            StopDragTimer();
             StopAdaptiveColorTimer();
             _renderer?.Dispose();
             _renderer = null;

@@ -152,6 +152,14 @@ namespace WinUIMusicPlayer.Helper
         public static extern bool GetCursorPos(out POINT lpPoint);
 
         [DllImport("user32.dll")]
+        public static extern short GetAsyncKeyState(int vKey);
+
+        private const int VK_LBUTTON = 0x01;
+
+        /// <summary>全局左键是否处于按下状态（含窗口无焦点时），用于点击穿透窗口的拖动手势检测。</summary>
+        public static bool IsLeftButtonDown() => (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+
+        [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
 

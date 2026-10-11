@@ -115,15 +115,18 @@
                     <StackPanel
                         Grid.Column="0"
                         Orientation="Horizontal">
-                        <Button BorderBrush="Transparent" BorderThickness="1"
+                        <Button 
                             x:Name="MusicInfoButtonPlayingDetail"
-                            MaxWidth="240"  Margin="6,0,0,0"
+                            Width="240"  Margin="6,0,0,0"
                             HorizontalAlignment="Left"
                             VerticalAlignment="Center"
+                                HorizontalContentAlignment="Left"
                             Background="Transparent"
                             Click="MusicInfoButtonPlayingDetail_Click"
                             Style="{StaticResource MenuButtonStyle}">
-                            <Grid 
+                            <Grid  HorizontalAlignment="Left"
+                                         VerticalAlignment="Center"
+     
                                 RowDefinitions="Auto,Auto,Auto">
                                 <TextBlock
                                     Grid.Row="0"

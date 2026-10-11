@@ -102,6 +102,14 @@ namespace WinUIMusicPlayer.DesktopLyrics
             }
         }
 
+        /// <summary>保存任务栏歌词自由停靠位置（拖动松手后由窗口调用）。</summary>
+        public void SaveWindowPosition(int x, int y)
+        {
+            AppSettings.DesktopLyricsPositionX = x;
+            AppSettings.DesktopLyricsPositionY = y;
+            PersistSettings();
+        }
+
         private static DesktopLyricsStyle BuildStyleFromSettings() => new(
             AppSettings.DesktopLyricsFontSize,
             AppSettings.DesktopLyricsFontFamily,

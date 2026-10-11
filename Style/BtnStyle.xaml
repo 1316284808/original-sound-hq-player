@@ -183,8 +183,8 @@
                         CornerRadius="{TemplateBinding CornerRadius}">
                         <ContentPresenter
                             x:Name="ContentPresenter"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center" />
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                         <VisualStateManager.VisualStateGroups>
                             <VisualStateGroup
                                 x:Name="CommonStates"

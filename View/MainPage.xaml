@@ -225,8 +225,7 @@
                         </Button>
                         <Grid 
                             Grid.Column="1"
-                            MaxWidth="240"
-                            Margin="6,0,0,0"
+                           Width="240"  Margin="6,0,0,0"
                             HorizontalAlignment="Left"
                             VerticalAlignment="Center"
                             RowDefinitions="Auto,Auto,Auto"

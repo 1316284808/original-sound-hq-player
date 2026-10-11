@@ -60,6 +60,14 @@ namespace WinUIMusicPlayer.Model
         /// <summary>桌面歌词阴影强度（0–100%）：0 = 关闭（渲染直接跳过阴影）；50 = 单层满强度；100 = 双重叠加。</summary>
         public static double DesktopLyricsShadowAmount { get; set; } = 50.0;
         public static int DesktopLyricsFontWeight { get; set; } = 400;
+
+        /// <summary>任务栏歌词自由停靠位置（物理像素，与窗口几何同坐标系）；
+        /// 等于 <see cref="DesktopLyricsInvalidPosition"/> 表示未拖动过，按默认贴靠任务栏。</summary>
+        public static int DesktopLyricsPositionX { get; set; } = DesktopLyricsInvalidPosition;
+        public static int DesktopLyricsPositionY { get; set; } = DesktopLyricsInvalidPosition;
+
+        /// <summary>未设置自由停靠位置时的哨兵值（不占用任何有效屏幕坐标）。</summary>
+        public const int DesktopLyricsInvalidPosition = int.MinValue;
         public static int LyricsFontWeight { get; set; } = 700;
         public static bool IsAutoCoverEnabled { get; set; } = true;
         /// <summary>当前均衡器状态的 JSON 快照（EqPreset v1 结构，持久化用）。</summary>

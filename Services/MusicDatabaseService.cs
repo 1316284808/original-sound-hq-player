@@ -1015,6 +1015,8 @@ namespace WinUIMusicPlayer.Services
                 AppSettings.IsDesktopLyricsTranslationEnabled = settings.IsDesktopLyricsTranslationEnabled;
                 AppSettings.DesktopLyricsFontWeight = settings.DesktopLyricsFontWeight;
                 AppSettings.LyricsFontWeight = settings.LyricsFontWeight;
+                AppSettings.DesktopLyricsPositionX = settings.DesktopLyricsPositionX;
+                AppSettings.DesktopLyricsPositionY = settings.DesktopLyricsPositionY;
                 AppViewModel.IsAutoLyricsEnabled = settings.IsAutoLyricsEnabled;
                 AppViewModel.IsAutoCoverEnabled = settings.IsAutoCoverEnabled;
                 AppViewModel.DsdGain = audio.DsdGain;

@@ -2,6 +2,19 @@
 
 新条目加在最上方。
 
+## 2026-10-11 云母(Mica)亮色浓郁度：从壁纸取主色反哺 TintColor
+
+- `Helper/CustomMicaSystemBackdrop.cs`：亮色（及暗色）云母改为从桌面壁纸提取主色——`GetDominantColorAsync` 读壁纸图、缩到 64px 做 4-4-4 量化取主导色，`BoostSaturation` 把饱和度高到 ≥0.55 后作为 `TintColor`、`TintOpacity≈0.5`（暗色则降亮 0.25 借色相），弥补 Windows 亮色 Mica 被 DWM 去饱和的"寡淡"。窗口经 `SetWindowLongPtr` 子类化 WndProc，监听 `WM_SETTINGCHANGE(SPI_SETDESKWALLPAPER)`，壁纸变更时异步重算并回 UI 线程应用。修正 BaseAlt 注释（BaseAlt 比 Base 更浓），并修正事件用 `?.` 订阅、`?.` 用于赋值左侧的编译错误。
+- 验证：构建通过（0 错误）。人工实测项：亮色下云母呈现壁纸色相且更浓郁、切换壁纸后自动跟随、暗色保持暗底带壁纸色相。
+
+## 2026-10-11 任务栏歌词：恢复拖动（自由停靠，位置持久化）
+
+- `DesktopLyrics/DesktopLyricsWindow.xaml.cs`：点击穿透窗口也能拖动——`OnHoverTimerTick` 用 `WindowHelper.IsLeftButtonDown()` 检测歌词区（非按钮）按压，进入拖动手势（`StartDrag`），全程 16ms 轮询跟随光标 `MoveAndResizeExact` 移动窗口，松开 `EndDrag` 保存位置。拖动期间停悬停轮询、关点击穿透；首次拖动后 `_userMoved=true` 转为自由停靠，`OnDockTimerTick` 不再夺回位置（仍自愈/重申置顶），新增 `PositionOrDock()` 统一入口（有持久位置则恢复、否则贴任务栏），构造/恢复可见/任务栏弹出均走此入口。
+- `Helper/WindowHelper.cs`：新增 `GetAsyncKeyState` 封装 `IsLeftButtonDown()`，供穿透窗口检测拖动按压。
+- `Model/AppSettings.cs`、`Model/SaveSettings.cs`、`Services/SettingsSnapshotFactory.cs`、`Services/MusicDatabaseService.cs`：新增 `DesktopLyricsPositionX/Y`（`int.MinValue` 哨兵=未拖动），自由停靠位置落盘与加载。
+- `DesktopLyrics/DesktopLyricsViewModel.cs`：新增 `SaveWindowPosition(x,y)` 落盘自由停靠位置。
+- 验证：构建通过（0 错误）。人工实测项：歌词区按住拖动跟手、松手停住、按钮区仍可点击、重启后位置保留、任务栏分辨率变化不再夺回自由位置。
+
 ## 2026-10-05 任务栏歌词：修复开启逐字歌词后歌词不显示
 
 - `DesktopLyrics/DesktopLyricsWindow.xaml`：`RendererHost` 的 `ContentPresenter` 由 `Width="auto" HorizontalAlignment="Left" VerticalAlignment="Center"` 改回 `HorizontalAlignment="Stretch" VerticalAlignment="Stretch"`。`CanvasLyricsRenderer` 的内容是 `CanvasAnimatedControl`，无固有尺寸；在 `Width="auto"`+`Left/Center` 下 `ContentPresenter` 被压成 0×0，导致 `RebuildLine` 因 `width < 60` 提前返回而不绘制（文本渲染器因 `TextBlock` 有固有尺寸仍正常）。逐字渲染依赖满尺寸画布，故开启逐字后整行歌词消失。

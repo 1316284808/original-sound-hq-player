@@ -132,5 +132,9 @@ namespace WinUIMusicPlayer.Model
         public double DesktopLyricsShadowAmount { get; set; } = 50.0;
         public int DesktopLyricsFontWeight { get; set; } = 400;
         public int LyricsFontWeight { get; set; } = 700;
+
+        /// <summary>任务栏歌词自由停靠位置（物理像素）；int.MinValue 表示未拖动过，按默认贴靠任务栏。</summary>
+        public int DesktopLyricsPositionX { get; set; } = int.MinValue;
+        public int DesktopLyricsPositionY { get; set; } = int.MinValue;
     }
 }
